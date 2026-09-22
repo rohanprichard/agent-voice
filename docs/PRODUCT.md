@@ -1,6 +1,6 @@
 # Product: on-device agent voice server (SpeakType spine)
 
-**Working name:** TBD (repo is currently `join-call` — rename later; ignore the old AgentCall meaning)
+**Working name:** Agent Voice Server (repo: `agent-voice`)
 
 **One-liner:** A local app that sets up like SpeakType (pick a good STT model → download with a progress bar → ready), then exposes an HTTP/WebSocket API so coding agents (Claude Code, Cursor, Codex, …) can listen and speak on-device. No hotkey. No Meet/Teams join in v1. No screenshare.
 

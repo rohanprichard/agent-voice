@@ -28,6 +28,6 @@ Rohan Richard — GitHub `rohanprichard`. Hyderabad. Stack: Python, TypeScript, 
 
 ## Adjacent repos (do not mix)
 
-- `rohanprichard/join-call` — this repo; repurposed for the SpeakType-fork agent voice server plan.
-- Earlier AgentCall PR scaffold — obsolete; remove.
+- `rohanprichard/agent-voice` — this repo; the SpeakType-fork agent voice server.
+- Earlier AgentCall PR scaffold — obsolete; removed.
 - LiveKit skill pack — not started; keep out of this tree.

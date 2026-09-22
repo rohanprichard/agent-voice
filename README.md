@@ -1,33 +1,30 @@
 # Agent Voice Server
 
-> **Status:** planning / build-ready. Spec for Codex (or any agent) is in [`PLAN.md`](./PLAN.md) and [`CONTEXT.md`](./CONTEXT.md).
+Local **speech-to-text + text-to-speech** for coding agents. Inspired by [SpeakType](https://github.com/karansinghgit/speaktype) (MIT).
 
-Local **speech-to-text + text-to-speech** for coding agents. Setup feels like [SpeakType](https://github.com/karansinghgit/speaktype) (pick a model → download bar → ready). Instead of a hotkey that types into apps, we expose a **localhost API** agents call.
+## What this is
 
-## Not this repo
-
-- ~~Join Google Meet / Teams / Zoom~~ (AgentCall already owns that skill)
-- ~~Screenshare / headless browser capture~~
-- ~~Global dictation hotkey~~
-
-## Docs for builders
-
-| Doc | What |
-| --- | --- |
-| [`CONTEXT.md`](./CONTEXT.md) | Why we pivoted; locked decisions; what to delete |
-| [`PLAN.md`](./PLAN.md) | Setup UX, API surface, models, phases, success criteria |
-| [`PRODUCT.md`](./PRODUCT.md) | Short product definition |
-
-## Quick intent
+An on-device server that exposes a localhost API for STT/TTS. Agents call it; no hotkey dictation.
 
 ```
-Install app → pick STT model → download → Ready
-     ↓
-Agent: POST /v1/stt/transcribe  +  POST /v1/tts/speak
+Agent: POST /v1/stt/transcribe  →  { "text": "..." }
+Agent: POST /v1/tts/speak       →  audio/wav
 ```
 
-Default bind: `127.0.0.1:8765` (see PLAN).
+Default bind: `127.0.0.1:8765`
+
+## What this is NOT
+
+This is **not** a meeting-join product. It does not join Google Meet, Teams, or Zoom. See [AgentCall](https://github.com/pattern-ai-labs/agentcall) if you need that.
+
+## For builders
+
+Read in order:
+
+1. [docs/CONTEXT.md](docs/CONTEXT.md) — background, locked decisions, what was dropped
+2. [docs/PLAN.md](docs/PLAN.md) — full build spec: setup UX, API surface, models, phases
+3. [docs/PRODUCT.md](docs/PRODUCT.md) — short product definition
 
 ## License
 
-MIT. STT/UI spine inspired by SpeakType (MIT) — attribute upstream when code is vendored/forked.
+MIT. STT/UI spine inspired by SpeakType (MIT) — see [NOTICE](NOTICE) for attribution.
