@@ -1,0 +1,11 @@
+NOTICE
+
+This project is inspired by and may incorporate code from SpeakType
+(https://github.com/karansinghgit/speaktype), which is licensed under
+the MIT License.
+
+SpeakType
+Copyright (c) Karan Singh
+
+When code from SpeakType is forked or vendored into this repository,
+retain the original copyright notice and MIT license terms.
