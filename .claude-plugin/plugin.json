@@ -1,0 +1,34 @@
+{
+  "name": "join-call",
+  "version": "0.1.0",
+  "description": "Join video meetings (Google Meet, Zoom, Teams) as an AI participant with voice and screenshare capabilities. Paste a meeting link and start talking. Powered by AgentCall.",
+  "author": {
+    "name": "Rohan Richard",
+    "email": "rohan@rohanrichard.com"
+  },
+  "repository": "https://github.com/rohanprichard/join-call",
+  "license": "MIT",
+  "keywords": [
+    "join-call",
+    "meeting-bot",
+    "voice-agent",
+    "ai-agent-skill",
+    "google-meet",
+    "zoom",
+    "teams",
+    "text-to-speech",
+    "screenshare",
+    "meeting-assistant",
+    "claude-code-skill",
+    "cursor-skill",
+    "video-meeting",
+    "agentcall"
+  ],
+  "commands": [
+    "./SKILL.md"
+  ],
+  "homepage": "https://github.com/rohanprichard/join-call",
+  "dependencies": {
+    "agentcall": ">=1.0.0"
+  }
+}

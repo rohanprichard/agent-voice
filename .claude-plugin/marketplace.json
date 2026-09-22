@@ -1,0 +1,23 @@
+{
+  "name": "join-call",
+  "owner": {
+    "name": "rohanprichard",
+    "email": "rohan@rohanrichard.com"
+  },
+  "metadata": {
+    "description": "Let AI agents join Google Meet, Zoom, and Teams with voice and screenshare. Paste a meeting link, start talking."
+  },
+  "plugins": [
+    {
+      "name": "join-call",
+      "source": "./",
+      "description": "Join video meetings as an AI participant with voice, screenshare, and chat. Built on AgentCall.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Rohan Richard",
+        "email": "rohan@rohanrichard.com"
+      },
+      "homepage": "https://github.com/rohanprichard/join-call"
+    }
+  ]
+}
