@@ -64,8 +64,10 @@ class CodexQueueTransport:
         """Start the proxy and initialize its experimental queue API."""
         if self.closed:
             raise QueueTransportError("The Codex queue transport is closed.")
-        if self.process:
+        if self.process and self.process.returncode is None:
             return
+        # A proxy that exited cannot deliver anything. Start a new one.
+        await self._stop()
         binary = await asyncio.to_thread(find_command, "codex")
         if not binary:
             raise QueueTransportError("Codex could not be found.")
@@ -154,6 +156,9 @@ class CodexQueueTransport:
         if self.closed:
             return
         self.closed = True
+        await self._stop()
+
+    async def _stop(self):
         for pending in self.pending.values():
             if not pending.future.done():
                 pending.future.set_exception(QueueTransportError("The queue transport closed."))

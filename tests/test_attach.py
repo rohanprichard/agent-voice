@@ -610,3 +610,48 @@ async def test_closing_leaves_the_terminal_alone():
     built.rollout = FakeRollout([])
     await built.close()
     assert built.rollout is None
+
+
+class FakeProxy:
+    def __init__(self):
+        self.returncode = None
+        self.stdout = asyncio.StreamReader()
+        self.stderr = asyncio.StreamReader()
+        self.stdin = None
+
+    def terminate(self):
+        self.returncode = -15
+        self.stdout.feed_eof()
+        self.stderr.feed_eof()
+
+    kill = terminate
+
+    async def wait(self):
+        return self.returncode
+
+
+async def test_a_queue_proxy_that_exited_is_started_again(monkeypatch):
+    from talktome import codex_queue
+
+    started = []
+
+    async def spawn(*args, **kwargs):
+        started.append(FakeProxy())
+        return started[-1]
+
+    async def answer(*args, **kwargs):
+        return {}
+
+    monkeypatch.setattr(codex_queue, "find_command", lambda name: "/usr/local/bin/codex")
+    monkeypatch.setattr(codex_queue.asyncio, "create_subprocess_exec", spawn)
+    transport = codex_queue.CodexQueueTransport()
+    monkeypatch.setattr(transport, "_request", answer)
+    monkeypatch.setattr(transport, "_notify", answer)
+    await transport.start()
+    await transport.start()
+    assert len(started) == 1
+    started[0].terminate()
+    await transport.start()
+    assert len(started) == 2
+    assert transport.process is started[1]
+    await transport.close()
