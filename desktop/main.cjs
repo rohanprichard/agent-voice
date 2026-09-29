@@ -96,10 +96,47 @@ let callAnchor = null;
 // drag and turned into an anchor.
 let appliedBounds = null;
 let tray;
-let callState = { live: false, muted: false, state: "idle" };
+let callState = readCallState({});
 let quitting = false;
 let shutdownStarted = false;
 let backendLog = "";
+
+// The actions a problem on the call surface can offer.
+const ALERT_ACTIONS = ["retry-mic", "mic-settings", "settings"];
+
+/**
+ * The one place the call state is built. The hidden window owns the call and
+ * reports it; every field the surface reads has to be copied here, or it never
+ * arrives.
+ */
+function readCallState(next) {
+  const alert = next.alert && typeof next.alert === "object" && typeof next.alert.text === "string"
+    ? {
+        text: next.alert.text.slice(0, 300),
+        action: ALERT_ACTIONS.includes(next.alert.action) ? next.alert.action : null,
+      }
+    : null;
+  return {
+    live: Boolean(next.live),
+    callId: typeof next.callId === "string" ? next.callId : null,
+    startedAt: typeof next.startedAt === "string" ? next.startedAt : null,
+    muted: Boolean(next.muted),
+    state: typeof next.state === "string" ? next.state : "idle",
+    name: typeof next.name === "string" ? next.name.slice(0, 80) : "TalkToMe",
+    userActive: Boolean(next.userActive),
+    agentActive: Boolean(next.agentActive),
+    thinking: Boolean(next.thinking),
+    transcribing: Boolean(next.transcribing),
+    working: Boolean(next.working),
+    tool: typeof next.tool === "string" ? next.tool.slice(0, 200) : "",
+    approval: Boolean(next.approval),
+    alert,
+    partial: typeof next.partial === "string" ? next.partial.slice(0, 6000) : "",
+    ring: next.ring && typeof next.ring === "object"
+      ? { id: String(next.ring.id || ""), name: String(next.ring.name || "") }
+      : null,
+  };
+}
 
 function glowMode() {
   if (callState.ring) return "ringing";
@@ -910,17 +947,16 @@ app.whenReady().then(async () => {
         // this message the ring tone kept playing in the hidden window, because
         // the renderer only stops a ring when it hears the idle state.
         sendToCall(callState);
-        // Wait for the closing animation before the window disappears. A later
-        // call cancels the timer. When the timer does run, the window returns to
-        // the pill size so the next call starts from a clean bound.
+        // Wait for the closing animation, then close the window. A hidden
+        // window kept its animation loop and its stream running for nothing.
+        // A later call cancels the timer, and the next ring makes a new window.
         if (!callHideTimer) {
           callHideTimer = setTimeout(() => {
             callHideTimer = null;
             if (!callState.live) {
               callTranscriptOpen = false;
               callAnchor = null;
-              applyCallBounds();
-              hideCallWindow();
+              if (callWindow && !callWindow.isDestroyed()) callWindow.destroy();
             }
           }, 360);
         }
@@ -942,94 +978,38 @@ app.whenReady().then(async () => {
       refreshTrayMenu();
     }
     refreshCallSurfaces = syncWindows;
-    let lastServerCall = "";
-    async function pollServerCall() {
-      if (quitting) return;
-      try {
-        const response = await fetch(`${origin}/v1/state`, {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: AbortSignal.timeout(1500),
-        });
-        if (!response.ok) return;
-        const snapshot = await response.json();
-        const callId = snapshot.room?.call_id || null;
-        const ring = snapshot.managed?.status === "ringing"
-          ? snapshot.managed.ring || null
-          : null;
-        const approval = Boolean(callId && snapshot.managed?.approvals?.length);
-        const key = JSON.stringify([callId, ring?.id || null, approval]);
-        if (key === lastServerCall) return;
-        lastServerCall = key;
-        const changedCall = callId !== callState.callId;
-        callState = {
-          ...callState,
-          live: Boolean(callId || ring),
-          callId,
-          startedAt: snapshot.room?.started_at || null,
-          ring: ring ? { id: String(ring.id || ""), name: String(ring.name || "") } : null,
-          state: ring ? "ringing" : callId ? "active" : "idle",
-          name: snapshot.managed?.thread_name || snapshot.room?.agent?.name || "TalkToMe",
-          muted: changedCall ? false : callState.muted,
-          userActive: changedCall ? false : callState.userActive,
-          agentActive: changedCall ? false : callState.agentActive,
-          thinking: changedCall ? false : callState.thinking,
-        };
-        if (ring || changedCall) {
-          callTranscriptOpen = false;
-          callAnchor = null;
-          approvalOpenedPanel = false;
-        }
-        // The call surface draws the request from its own state poll. This
-        // side makes sure the panel is open and large enough to hold it.
-        if (approval !== callApproval) {
-          callApproval = approval;
-          if (approval && !callTranscriptOpen) {
-            callTranscriptOpen = true;
-            approvalOpenedPanel = true;
-          } else if (!approval && approvalOpenedPanel) {
-            callTranscriptOpen = false;
-            approvalOpenedPanel = false;
-          }
-          applyCallBounds();
-        }
-        updateNotchGlow();
-        syncWindows();
-      } catch {}
-    }
-    setInterval(() => { void pollServerCall(); }, 500);
-    void pollServerCall();
+    // The hidden window follows the server's stream and reports here. It is the
+    // only source of the call state, so the state has one writer.
     ipcMain.handle("talktome:call-state", (event, next) => {
       requireMainFrame(event);
       if (!next || typeof next !== "object") throw new Error("The call state is invalid.");
       const wasLive = callState.live;
       const previousCallId = callState.callId;
-      // Rebuilt rather than forwarded, so this is the one place the shape of the
-      // call state is defined. Every field the surface reads has to be copied
-      // here or it silently never arrives.
-      callState = {
-        live: Boolean(next.live),
-        callId: typeof next.callId === "string" ? next.callId : null,
-        startedAt: typeof next.startedAt === "string" ? next.startedAt : null,
-        muted: Boolean(next.muted),
-        state: typeof next.state === "string" ? next.state : "idle",
-        name: typeof next.name === "string" ? next.name.slice(0, 80) : "TalkToMe",
-        userActive: Boolean(next.userActive),
-        agentActive: Boolean(next.agentActive),
-        thinking: Boolean(next.thinking),
-        partial: typeof next.partial === "string" ? next.partial.slice(0, 6000) : "",
-        ring: next.ring && typeof next.ring === "object"
-          ? { id: String(next.ring.id || ""), name: String(next.ring.name || "") }
-          : null,
-      };
+      callState = readCallState(next);
       // A call that starts or ends begins with a closed transcript and the pill
-      // back at its place. The window is reused between calls, so without this
-      // the last call's panel and drag anchor survived into the next ring.
+      // back at its place, so the last call's panel and drag anchor do not
+      // survive into the next ring.
       if (wasLive !== callState.live || previousCallId !== callState.callId) {
         callTranscriptOpen = false;
         callAnchor = null;
+        approvalOpenedPanel = false;
       }
       // The ring asks one question and has no transcript.
       if (callState.state === "ringing") callTranscriptOpen = false;
+      // The surface draws the approval request. This side makes sure the panel
+      // is open and large enough to hold it.
+      const approval = Boolean(callState.callId && callState.approval);
+      if (approval !== callApproval) {
+        callApproval = approval;
+        if (approval && !callTranscriptOpen) {
+          callTranscriptOpen = true;
+          approvalOpenedPanel = true;
+        } else if (!approval && approvalOpenedPanel) {
+          callTranscriptOpen = false;
+          approvalOpenedPanel = false;
+        }
+        applyCallBounds();
+      }
       updateNotchGlow();
       syncWindows();
       return true;
@@ -1085,7 +1065,10 @@ app.whenReady().then(async () => {
       // be measured. It pushes them here and they are relayed to the surface.
       ipcMain.on("talktome:call-command", (event, type) => {
         if (!callWindow || event.sender !== callWindow.webContents) return;
-        if (!["mute", "interrupt", "end", "accept"].includes(type)) return;
+        if (type === "settings") return openSettings();
+        if (type === "mic-settings") return void shell.openExternal(SETTINGS_PANES.microphone);
+        if (!["mute", "interrupt", "end", "accept", "retry-mic", "dismiss"].includes(type))
+          return;
         sendToWindow("talktome:call-command", type);
       });
       ipcMain.on("talktome:call-resize", (event, open) => {

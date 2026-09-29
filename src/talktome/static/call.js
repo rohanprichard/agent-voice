@@ -17,6 +17,7 @@ import {
   threadFrame,
 } from "./threads.js";
 import { approvalDetails, approvalSummary } from "./approval.js";
+import { applyEvent, followStream } from "./stream.js";
 
 const surface = document.getElementById("surface");
 const canvas = document.getElementById("canvas");
@@ -36,6 +37,7 @@ const transcriptEmpty = document.getElementById("transcript-empty");
 const ringing = document.getElementById("ringing");
 const ringingName = document.getElementById("ringing-name");
 const acceptButton = document.getElementById("accept");
+const alertButton = document.getElementById("alert-action");
 const approvalCard = document.getElementById("approval");
 const approvalTool = document.getElementById("approval-tool");
 const approvalCommand = document.getElementById("approval-command");
@@ -62,6 +64,11 @@ const state = {
   partial: "",
   // The approval request the agent is waiting on, from the server state.
   approval: null,
+  // From the hidden window: a problem to show, and what the agent is doing.
+  alert: null,
+  working: false,
+  transcribing: false,
+  tool: "",
   // Where the window sits: "bottom" or "top-center". The main process reports
   // this value from the saved setting.
   placement: "bottom",
@@ -175,6 +182,12 @@ function loop(now) {
   previous = now;
   advancePhases(delta);
   draw();
+  // Reply deltas arrive faster than frames. The transcript is drawn at most
+  // once a frame.
+  if (transcriptDirty) {
+    transcriptDirty = false;
+    renderTranscript(currentMessages);
+  }
   frame = requestAnimationFrame(loop);
 }
 
@@ -184,10 +197,11 @@ let ringContext = null;
 let ringTimer = null;
 let ringGuard = null;
 
-// The server gives up on an ignored ring after ten seconds. The surface stops
-// its own tone a little later, so a message the window never heard cannot leave
-// it ringing forever. A new ring replaces the guard.
-const RING_GUARD_MS = 12000;
+// The server gives up on an ignored ring after 30 seconds (RING_TIMEOUT in
+// managed.py). The surface stops its own tone a little later, so a message the
+// window never heard cannot leave it ringing forever. A new ring replaces the
+// guard.
+const RING_GUARD_MS = 32000;
 
 function ringTone() {
   const context = ringContext;
@@ -274,18 +288,40 @@ function render() {
   }
   callName.textContent = state.name;
   interruptButton.disabled = state.callState !== "active" || !state.active.agent;
-  callStatus.textContent = state.callState === "error"
+  const alert = state.callState === "active" ? state.alert : null;
+  surface.dataset.alert = String(Boolean(alert));
+  alertButton.hidden = !alert;
+  if (alert) {
+    alertButton.textContent = ALERT_ACTIONS[alert.action] || "Dismiss";
+    alertButton.dataset.action = alert.action || "dismiss";
+  }
+  const line = state.callState === "error"
     ? "Call stopped"
-    : state.approval
-      ? "Needs approval"
-      : muted
-        ? "Microphone off"
-        : state.active.agent
-          ? "Agent speaking"
-          : "Listening";
+    : alert
+      ? alert.text
+      : state.approval
+        ? "Needs approval"
+        : muted
+          ? "Microphone off"
+          : state.active.agent
+            ? "Agent speaking"
+            : state.transcribing
+              ? "Transcribing…"
+              : state.working
+                ? state.tool ? `Working · ${state.tool}` : "Working"
+                : "Listening";
+  if (callStatus.textContent !== line) callStatus.textContent = line;
+  callStatus.title = line;
   if (state.callState === "error") status.textContent = "The call stopped";
   else if (state.callState === "connecting") status.textContent = "Connecting";
 }
+
+// The one action the pill offers for each kind of problem.
+const ALERT_ACTIONS = {
+  "retry-mic": "Retry mic",
+  "mic-settings": "Open Settings",
+  settings: "Open Settings",
+};
 
 function setTranscriptOpen(open, { notify = true } = {}) {
   if (state.open === open) return;
@@ -416,9 +452,8 @@ async function decide(allow) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ allow }),
     });
-    // A 409 means the request already ended. The next poll removes the card.
+    // A 409 means the request already ended. The stream removes the card.
     if (!response.ok && response.status !== 409) throw new Error(String(response.status));
-    await poll();
   } catch {
     if (state.approval?.id !== approval.id) return;
     approvalBusy = false;
@@ -434,68 +469,83 @@ denyButton.addEventListener("click", () => void decide(false));
 
 // --------------------------------------------------------------- transcript
 
-let rendered = "";
 let currentMessages = [];
+let transcriptDirty = false;
 // The call the rendered transcript belongs to. The room keeps a finished call's
 // messages, so this decides when the panel has to start again.
 let renderedCallId = null;
+// The live room from the stream, and the approvals from the session.
+let streamRoom = { messages: [] };
+let streamApprovals = [];
 
+function transcriptRows(messages) {
+  const rows = messages.slice(-14).map((message) => ({
+    kind: message.role === "user" ? "user" : "agent",
+    who: message.role === "user" ? "You" : message.name || "Agent",
+    text: message.text,
+  }));
+  if (state.partial) rows.push({ kind: "user partial", who: "You · live", text: state.partial });
+  // What the agent does between replies, and a problem, are one line each at
+  // the end. Neither is part of the conversation, so neither is kept.
+  if (state.working && state.tool) rows.push({ kind: "status", who: "Working", text: state.tool });
+  if (state.alert) rows.push({ kind: "status alert", who: "Problem", text: state.alert.text });
+  return rows;
+}
+
+// Only the rows that changed are touched. A streamed reply changes one row many
+// times a second, and redrawing the whole list for it made the panel flicker.
 function renderTranscript(messages) {
-  const recent = messages.slice(state.partial ? -13 : -14);
-  if (state.partial) recent.push({ role: "user", text: state.partial, partial: true });
-  const key = JSON.stringify(recent.map((message) => [message.role, message.text, message.partial]));
-  if (key === rendered) return;
-  rendered = key;
-  transcriptList.replaceChildren(
-    ...recent.map((message) => {
-      const item = document.createElement("li");
-      item.className = `${message.role === "user" ? "user" : "agent"}${message.partial ? " partial" : ""}`;
+  const rows = transcriptRows(messages);
+  const items = transcriptList.children;
+  while (items.length > rows.length) items[items.length - 1].remove();
+  rows.forEach((row, index) => {
+    let item = items[index];
+    if (!item) {
+      item = document.createElement("li");
       const who = document.createElement("span");
       who.className = "who";
-      who.textContent = message.partial
-        ? "You · live"
-        : message.role === "user" ? "You" : message.name || "Agent";
       const said = document.createElement("span");
       said.className = "said";
-      said.textContent = message.text;
       item.append(who, said);
-      return item;
-    }),
-  );
-  transcriptEmpty.hidden = recent.length > 0;
+      transcriptList.append(item);
+    }
+    if (item.className !== row.kind) item.className = row.kind;
+    if (item.firstChild.textContent !== row.who) item.firstChild.textContent = row.who;
+    if (item.lastChild.textContent !== row.text) item.lastChild.textContent = row.text;
+  });
+  transcriptEmpty.hidden = rows.length > 0;
   if (state.open) transcriptList.scrollTop = transcriptList.scrollHeight;
 }
 
-async function poll() {
-  try {
-    const response = await fetch("/v1/state");
-    if (!response.ok) throw new Error(String(response.status));
-    const body = await response.json();
-    const room = body.room || {};
-    const callId = room.call_id || null;
-    if (state.callId !== undefined && callId !== state.callId) return;
-    // The room keeps the last call's messages after it ends, so a new ring saw
-    // the old conversation. Keep only the messages that belong to the call that
-    // is live now, and clear the panel when the call identity changes.
-    if (callId !== renderedCallId) {
-      renderedCallId = callId;
-      rendered = "";
-      currentMessages = [];
-      transcriptList.replaceChildren();
-      transcriptEmpty.hidden = false;
-    }
-    const messages = callId
-      ? (room.messages || []).filter((message) => message.call_id === callId)
-      : [];
-    currentMessages = messages;
-    renderTranscript(currentMessages);
-    const approvals = callId ? body.managed?.approvals || [] : [];
-    renderApproval(approvals[0] || null);
-  } catch {
-    // A missed poll is not worth reporting: the main process owns call state and
-    // will tell this window if the call actually ended.
+// The room keeps the last call's messages after it ends, so a new ring saw the
+// old conversation. Keep only the messages of the call that is live now, and
+// clear the panel when the call identity changes.
+function showRoom() {
+  const callId = state.callId ?? streamRoom.call_id ?? null;
+  if (callId !== renderedCallId) {
+    renderedCallId = callId;
+    transcriptList.replaceChildren();
   }
+  currentMessages = callId
+    ? streamRoom.messages.filter((message) => message.call_id === callId)
+    : [];
+  transcriptDirty = true;
+  renderApproval(callId ? streamApprovals[0] || null : null);
 }
+
+followStream({
+  onSnapshot: ({ room, managed }) => {
+    streamRoom = { ...room, messages: room.messages || [] };
+    streamApprovals = managed?.approvals || [];
+    showRoom();
+  },
+  onEvent: ({ event, room, managed }) => {
+    applyEvent(streamRoom, event);
+    if (room) Object.assign(streamRoom, room);
+    if (managed) streamApprovals = managed.approvals || [];
+    showRoom();
+  },
+});
 
 // ------------------------------------------------------------------ events
 
@@ -505,6 +555,7 @@ interruptButton.addEventListener("click", () => command("interrupt"));
 transcriptToggle.addEventListener("click", () => setTranscriptOpen(!state.open));
 transcriptClose.addEventListener("click", () => setTranscriptOpen(false));
 acceptButton.addEventListener("click", () => command("accept"));
+alertButton.addEventListener("click", () => command(alertButton.dataset.action || "dismiss"));
 document.getElementById("end").addEventListener("click", () => {
   // Let the closing animation play before the window is taken away.
   surface.dataset.ending = "true";
@@ -519,13 +570,13 @@ document.addEventListener("keydown", (event) => {
 });
 
 window.talktomeCall.onState((next) => {
+  const callChanged = next.callId !== undefined && next.callId !== state.callId;
   if (next.callId !== undefined) state.callId = next.callId;
-  if (next.callId !== undefined && next.callId !== renderedCallId) {
-    renderedCallId = next.callId;
-    currentMessages = [];
-    rendered = "";
-  }
   if (next.muted !== undefined) state.muted = next.muted;
+  state.alert = next.alert || null;
+  state.working = next.working === true;
+  state.transcribing = next.transcribing === true;
+  state.tool = typeof next.tool === "string" ? next.tool : "";
   if (next.name) state.name = next.name;
   if (next.state) state.callState = next.state;
   // Written straight into the objects the animation frame reads. Making these
@@ -535,10 +586,9 @@ window.talktomeCall.onState((next) => {
     agent: next.agentActive === true,
   };
   state.ring = next.ring || null;
-  if (next.partial !== undefined) {
-    state.partial = next.partial;
-    renderTranscript(currentMessages);
-  }
+  if (next.partial !== undefined) state.partial = next.partial;
+  if (callChanged) showRoom();
+  transcriptDirty = true;
   if (next.placement === "top-center" || next.placement === "bottom") {
     state.placement = next.placement;
   }
@@ -559,8 +609,6 @@ document.addEventListener("visibilitychange", () => {
 });
 
 render();
-setInterval(poll, 600);
-void poll();
 frame = requestAnimationFrame(loop);
 
 // The window can be torn down while a frame is pending.
