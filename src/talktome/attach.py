@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 import os
 import select
 import sqlite3
@@ -31,6 +32,8 @@ from .agents import find_command
 from .codex_queue import CodexQueueTransport, QueueTransportUnsupported
 
 SESSIONS = Path(".codex") / "sessions"
+
+logger = logging.getLogger(__name__)
 
 
 def session_name(thread_id: str, root: Path | None = None) -> str | None:
@@ -310,16 +313,19 @@ def queue_message(thread_id: str, message: str, cwd: str | None = None, run=subp
     return result
 
 
-# Wait for the terminal to write the user's message to the file.
+# Wait this long for the terminal to write the user's message to the file. After
+# that the call says it is waiting for the terminal, and keeps waiting.
 # `codex queue` can return before the terminal reads that message.
 ACK_TIMEOUT = 20
 
 # How often to look at the rollout while waiting for the agent to answer.
 POLL = 0.1
 
-# A terminal session can be busy with something long. This is how long the app
-# waits for the queued message to be picked up before it tells the user.
-TURN_TIMEOUT = 180
+WAITING = "Waiting for the terminal"
+
+
+def same_text(text: str) -> str:
+    return " ".join(text.split())
 
 
 class AttachedAdapter:
@@ -329,6 +335,11 @@ class AttachedAdapter:
     speech pipeline, the transcript, and the call surface are all unchanged. What
     this cannot do is interrupt: only a thread's writer can stop its turn, and that
     writer is the terminal. The app can stop speaking, and that is all.
+
+    One reader follows the rollout for the whole call. A turn can end long after
+    the user said something else, and its reply still belongs to the call. The
+    reader speaks through the newest `run`, so a reply that comes late plays in
+    the turn that is live when it arrives.
     """
 
     agent_name = "Codex"
@@ -338,7 +349,6 @@ class AttachedAdapter:
         self.cwd = cwd
         self.rollout = None
         self.poll = POLL
-        self.timeout = TURN_TIMEOUT
         self.ack_timeout = ACK_TIMEOUT
         # Injectable so the whole turn can be tested without Codex or a thread.
         self.deliver = queue_message
@@ -346,6 +356,15 @@ class AttachedAdapter:
         self.queue_transport = CodexQueueTransport()
         self.queue_fallback = False
         self.wakeup = RolloutWakeup()
+        # Messages this call queued that the terminal has not finished answering.
+        self.waiting = []
+        # The Codex turns our messages started. The value is True when the user
+        # stopped the reply, so the rest of that turn is not spoken.
+        self.turns = {}
+        self.sink = None
+        # Replies that arrive between two runs, when one utterance replaces
+        # another. The next run speaks them.
+        self.held = []
 
     async def start(self):
         # Find the terminal command before the user speaks. A packaged app can
@@ -354,8 +373,9 @@ class AttachedAdapter:
         rollout = await asyncio.to_thread(Rollout.open, self.session_id)
         if rollout is None:
             raise ValueError(
-                "That session has no transcript yet. Send it one message in the "
-                "terminal, then start the call again."
+                "That session has no Codex transcript yet. If it is not a Codex session, "
+                "call again with --agent, for example --agent claude. If it is, send it "
+                "one message in the terminal, then call again."
             )
         # Everything before the call is history, not conversation.
         await asyncio.to_thread(rollout.skip_history)
@@ -368,64 +388,142 @@ class AttachedAdapter:
             await self.queue_transport.close()
             self.queue_fallback = True
 
+    def stop_speaking(self):
+        """The user stopped the reply. Keep reading, but say nothing more of it."""
+        for entry in self.waiting:
+            entry["muted"] = True
+        for turn in self.turns:
+            self.turns[turn] = True
+        self.held.clear()
+
     async def run(self, text, emit, approve):
-        # The call command can finish after the app starts to read the file.
-        # Clear that turn before the app sends the user's question.
-        await asyncio.to_thread(self.rollout.read_new)
-        await emit("turn.queue_start")
+        if self.reader is None or self.reader.done():
+            self.reader = asyncio.create_task(self._follow())
+        self.sink = emit
+        held, self.held = self.held, []
+        for event_type, data in held:
+            await emit(event_type, **data)
+        loop = asyncio.get_running_loop()
+        entry = {
+            "text": same_text(text),
+            "turn": None,
+            "muted": False,
+            "accepted": loop.create_future(),
+            "done": loop.create_future(),
+        }
+        # Listed before the message goes out, so a fast answer is not missed.
+        self.waiting.append(entry)
+        try:
+            await emit("turn.queue_start")
+            try:
+                await self._send(text)
+            except BaseException:
+                self.waiting.remove(entry)
+                raise
+            await emit("turn.queued")
+            try:
+                await asyncio.wait_for(asyncio.shield(entry["accepted"]), self.ack_timeout)
+            except TimeoutError:
+                # A busy terminal reads the message when its current work ends.
+                await emit("tool.status", text=WAITING, status="active")
+            await asyncio.shield(entry["done"])
+        finally:
+            if self.sink is emit:
+                self.sink = None
+
+    async def _send(self, text):
         if self.deliver is not queue_message or self.queue_fallback:
             await asyncio.to_thread(self.deliver, self.session_id, text, self.cwd)
-        else:
-            if self.queue_transport.closed:
-                self.queue_transport = CodexQueueTransport()
-            try:
-                await self.queue_transport.send(self.session_id, text, self.cwd)
-            except QueueTransportUnsupported:
-                self.queue_fallback = True
-                await asyncio.to_thread(self.deliver, self.session_id, text, self.cwd)
-        await emit("turn.queued")
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + self.timeout
-        acknowledgement = loop.time() + self.ack_timeout
-        reply_turn = None
-        while loop.time() < deadline:
-            records = await asyncio.to_thread(self.rollout.read_new)
-            for record in records:
-                payload = record.get("payload") or {}
-                if reply_turn is None:
-                    if user_message_text(record) != text.strip():
-                        continue
-                    reply_turn = payload.get("turn_id")
-                    acknowledgement = None
-                    await emit("turn.accepted")
-                    continue
-                if payload.get("turn_id") != reply_turn:
-                    continue
-                message = spoken_message(record)
-                if message:
-                    await emit(
-                        "message.done",
-                        item_id=message["id"] or f"msg-{uuid4()}",
-                        text=message["text"],
-                        kind=message["kind"],
+            return
+        if self.queue_transport.closed:
+            self.queue_transport = CodexQueueTransport()
+        try:
+            await self.queue_transport.send(self.session_id, text, self.cwd)
+        except QueueTransportUnsupported:
+            self.queue_fallback = True
+            await asyncio.to_thread(self.deliver, self.session_id, text, self.cwd)
+
+    async def _follow(self):
+        try:
+            while self.rollout is not None:
+                records = await asyncio.to_thread(self.rollout.read_new)
+                for record in records:
+                    await self._read(record)
+                await self.wakeup.wait(self.poll)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.exception("The Codex transcript reader stopped.")
+            for entry in self.waiting:
+                if not entry["done"].done():
+                    entry["done"].set_exception(
+                        RuntimeError(f"TalkToMe stopped reading the Codex session. {exc}")
                     )
-                activity = tool_activity(record)
-                if activity:
-                    await emit("tool.status", text=activity["text"], status="done")
-                finished = turn_finished(record)
-                if finished:
-                    # The final message is already emitted above, with its phase.
-                    return
-            if loop.time() >= deadline:
-                break
-            if acknowledgement and loop.time() > acknowledgement:
-                raise RuntimeError(
-                    "The terminal did not read that message. It may be busy or waiting for your input."
-                )
-            await self.wakeup.wait(self.poll)
-        raise RuntimeError("The session did not answer. It may still be working on something else.")
+            self.waiting.clear()
+
+    def _claim(self, said):
+        """The queued messages that one user message in the rollout holds.
+
+        The terminal can merge messages that were queued while it worked, so one
+        user message can answer several of ours.
+        """
+        said = same_text(said)
+        return [entry for entry in self.waiting if entry["turn"] is None and entry["text"] in said]
+
+    async def _emit(self, event_type, **data):
+        if self.sink is not None:
+            await self.sink(event_type, **data)
+        elif event_type != "turn.accepted" and len(self.held) < 64:
+            self.held.append((event_type, data))
+
+    async def _read(self, record):
+        payload = record.get("payload") or {}
+        turn = payload.get("turn_id")
+        said = user_message_text(record)
+        if said is not None:
+            claimed = self._claim(said)
+            if claimed:
+                muted = all(entry["muted"] for entry in claimed)
+                self.turns[turn] = self.turns.get(turn, True) and muted
+                for entry in claimed:
+                    entry["turn"] = turn
+                    if not entry["accepted"].done():
+                        entry["accepted"].set_result(None)
+                await self._emit("turn.accepted")
+            return
+        if turn not in self.turns:
+            return
+        muted = self.turns[turn]
+        message = spoken_message(record)
+        if message and not muted:
+            await self._emit(
+                "message.done",
+                item_id=message["id"] or f"msg-{uuid4()}",
+                text=message["text"],
+                kind=message["kind"],
+            )
+        activity = tool_activity(record)
+        if activity and not muted:
+            await self._emit("tool.status", text=activity["text"], status="done")
+        if turn_finished(record):
+            del self.turns[turn]
+            for entry in [entry for entry in self.waiting if entry["turn"] == turn]:
+                self.waiting.remove(entry)
+                if not entry["done"].done():
+                    entry["done"].set_result(None)
 
     async def close(self):
+        if self.reader is not None:
+            self.reader.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self.reader
+            self.reader = None
+        for entry in self.waiting:
+            for future in (entry["accepted"], entry["done"]):
+                future.cancel()
+        self.waiting.clear()
+        self.sink = None
+        self.held.clear()
         self.wakeup.close()
         await self.queue_transport.close()
         self.rollout = None

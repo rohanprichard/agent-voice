@@ -5,6 +5,7 @@ documentation, because the rollout format is the only view of a held thread and 
 assumption about it fails silently: a call would simply never speak.
 """
 
+import asyncio
 import json
 import sqlite3
 from pathlib import Path
@@ -304,10 +305,11 @@ class FakeRollout:
         return self.batches.pop(0) if self.batches else []
 
 
+
+
 def adapter(monkeypatch, batches, delivered=None):
     built = attach.AttachedAdapter("t-1", "/tmp/project")
     built.poll = 0.001
-    built.timeout = 2
     built.ack_timeout = 2
     built.rollout = FakeRollout([[], *batches])
     # Always stubbed: the real one runs the Codex binary, which has no thread to
@@ -321,22 +323,44 @@ def adapter(monkeypatch, batches, delivered=None):
     return built
 
 
-async def collect(adapter, text="hello"):
-    """Run one turn and return everything the adapter reported."""
+def recorder():
     emitted = []
 
     async def emit(event_type, **data):
         emitted.append((event_type, data))
 
-    await adapter.run(text, emit, lambda *a: None)
+    return emitted, emit
+
+
+async def collect(adapter, text="hello"):
+    """Run one turn and return everything the adapter reported."""
+    emitted, emit = recorder()
+    try:
+        async with asyncio.timeout(3):
+            await adapter.run(text, emit, lambda *a: None)
+    finally:
+        await adapter.close()
     return emitted
+
+
+async def until(predicate):
+    async with asyncio.timeout(3):
+        while not predicate():
+            await asyncio.sleep(0.002)
+
+
+def spoken(emitted):
+    return [data["text"] for event, data in emitted if event == "message.done"]
 
 
 async def test_a_queued_message_is_delivered_into_the_thread(monkeypatch):
     delivered = []
-    built = adapter(monkeypatch, [[]], delivered)
-    with pytest.raises(RuntimeError):
-        await collect(built, "what changed?")
+    built = adapter(
+        monkeypatch,
+        [[queued_user_message("what changed?"), record(type="task_complete", turn_id="turn-1")]],
+        delivered,
+    )
+    await collect(built, "what changed?")
     assert delivered == [("t-1", "what changed?", "/tmp/project")]
 
 
@@ -400,9 +424,9 @@ async def test_a_turn_ends_when_the_thread_says_it_did():
             ]
         ],
     )
-    await collect(built)
-    # It returned rather than waiting out the timeout, and stopped reading.
-    assert built.rollout.reads == 2
+    emitted = await collect(built)
+    assert spoken(emitted) == ["All done."]
+    assert built.waiting == []
 
 
 async def test_an_earlier_turn_does_not_take_the_new_question():
@@ -429,11 +453,135 @@ async def test_an_earlier_turn_does_not_take_the_new_question():
     ]
 
 
-async def test_a_session_that_never_answers_says_so():
-    built = adapter(None, [[]])
-    with pytest.raises(RuntimeError) as error:
+async def test_a_busy_terminal_is_a_status_and_its_late_reply_is_spoken():
+    # The terminal reads a queued message only after its current work. That is
+    # a wait, not a failure, and the reply that comes later is still the answer.
+    built = adapter(None, [])
+    built.ack_timeout = 0.01
+    emitted, emit = recorder()
+    turn = asyncio.create_task(built.run("hello", emit, None))
+    await until(lambda: ("tool.status", {"text": "Waiting for the terminal", "status": "active"}) in emitted)
+    assert not turn.done()
+    built.rollout.batches.append(
+        [queued_user_message(), agent_message("Sorry, I was busy.", phase="final_answer")]
+    )
+    built.rollout.batches.append([record(type="task_complete", turn_id="turn-1")])
+    async with asyncio.timeout(3):
+        await turn
+    await built.close()
+    assert spoken(emitted) == ["Sorry, I was busy."]
+    assert ("turn.accepted", {}) in emitted
+
+
+async def test_a_follow_up_during_work_keeps_the_first_reply():
+    # A second utterance replaces the first run. The first turn still ends later,
+    # and its reply plays in the call through the run that is live then.
+    built = adapter(None, [])
+    first_events, first = recorder()
+    second_events, second = recorder()
+    first_run = asyncio.create_task(built.run("first", first, None))
+    built.rollout.batches.append([
+        item_completed(
+            {"type": "UserMessage", "id": "u-1", "content": [{"type": "text", "text": "first"}]}
+        ),
+        agent_message("Working on the first.", item_id="m-1"),
+    ])
+    await until(lambda: spoken(first_events) == ["Working on the first."])
+    first_run.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await first_run
+    second_run = asyncio.create_task(built.run("second", second, None))
+    await until(lambda: len(built.waiting) == 2)
+    built.rollout.batches.append([
+        agent_message("The first is done.", phase="final_answer", item_id="m-2"),
+        record(type="task_complete", turn_id="turn-1"),
+    ])
+    built.rollout.batches.append([
+        record(
+            type="item_completed",
+            turn_id="turn-2",
+            item={"type": "UserMessage", "id": "u-2", "content": [{"type": "text", "text": "second"}]},
+        ),
+        record(
+            type="item_completed",
+            turn_id="turn-2",
+            item={
+                "type": "AgentMessage",
+                "id": "m-3",
+                "content": [{"type": "Text", "text": "And the second."}],
+                "phase": "final_answer",
+            },
+        ),
+        record(type="task_complete", turn_id="turn-2"),
+    ])
+    async with asyncio.timeout(3):
+        await second_run
+    await built.close()
+    assert spoken(second_events) == ["The first is done.", "And the second."]
+
+
+async def test_one_merged_message_answers_every_queued_one():
+    # A terminal can join messages that were queued while it worked into one
+    # user message. Each queued message is answered by that one turn.
+    built = adapter(None, [])
+    _, first = recorder()
+    second_events, second = recorder()
+    first_run = asyncio.create_task(built.run("Check the tests", first, None))
+    await until(lambda: len(built.waiting) == 1)
+    first_run.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await first_run
+    second_run = asyncio.create_task(built.run("and the  docs", second, None))
+    await until(lambda: len(built.waiting) == 2)
+    built.rollout.batches.append([
+        queued_user_message("Check the tests\n\nand the docs"),
+        agent_message("Both look fine.", phase="final_answer"),
+        record(type="task_complete", turn_id="turn-1"),
+    ])
+    async with asyncio.timeout(3):
+        await second_run
+    await built.close()
+    assert spoken(second_events) == ["Both look fine."]
+    assert built.waiting == []
+
+
+async def test_a_stopped_reply_is_not_spoken_when_the_rest_arrives():
+    built = adapter(None, [[queued_user_message(), agent_message("First part.")]])
+    emitted, emit = recorder()
+    turn = asyncio.create_task(built.run("hello", emit, None))
+    await until(lambda: spoken(emitted) == ["First part."])
+    built.stop_speaking()
+    built.rollout.batches.append([
+        agent_message("Second part.", item_id="m-2"),
+        record(type="task_complete", turn_id="turn-1"),
+    ])
+    async with asyncio.timeout(3):
+        await turn
+    await built.close()
+    assert spoken(emitted) == ["First part."]
+
+
+async def test_other_rollout_activity_does_not_acknowledge_the_question(monkeypatch):
+    built = adapter(monkeypatch, [[{"type": "event_msg", "payload": {"type": "token_count"}}], []])
+    built.ack_timeout = 0.02
+    emitted, emit = recorder()
+    turn = asyncio.create_task(built.run("hello", emit, None))
+    await until(lambda: any(event == "tool.status" for event, _ in emitted))
+    assert ("turn.accepted", {}) not in emitted
+    turn.cancel()
+    await built.close()
+
+
+async def test_a_queue_failure_is_still_an_error():
+    built = adapter(None, [])
+
+    def refuse(*args):
+        raise ValueError("Codex would not accept the message for this session.")
+
+    built.deliver = refuse
+    with pytest.raises(ValueError, match="would not accept"):
         await collect(built)
-    assert "did not answer" in str(error.value)
+    assert built.waiting == []
 
 
 async def test_joining_needs_a_transcript_to_follow(monkeypatch):
@@ -441,7 +589,10 @@ async def test_joining_needs_a_transcript_to_follow(monkeypatch):
     monkeypatch.setattr(attach.Rollout, "open", classmethod(lambda cls, *a, **k: None))
     with pytest.raises(ValueError) as error:
         await built.start()
-    assert "no transcript yet" in str(error.value)
+    assert "no Codex transcript yet" in str(error.value)
+    # A Claude session called with the default agent lands here, so the message
+    # names the flag that fixes it.
+    assert "--agent claude" in str(error.value)
 
 
 async def test_attaching_skips_the_conversation_so_far(monkeypatch):
@@ -450,6 +601,7 @@ async def test_attaching_skips_the_conversation_so_far(monkeypatch):
     built = attach.AttachedAdapter("t-1", "/tmp")
     await built.start()
     assert rollout.skipped is True
+    await built.close()
 
 
 async def test_closing_leaves_the_terminal_alone():
@@ -458,29 +610,3 @@ async def test_closing_leaves_the_terminal_alone():
     built.rollout = FakeRollout([])
     await built.close()
     assert built.rollout is None
-
-
-async def test_a_session_that_takes_the_message_and_ignores_it_says_so(monkeypatch):
-    """`codex queue` returning zero only means the message was handed over.
-
-    The terminal still has to pick it up. Waiting the full turn timeout for a
-    message nothing is going to read is three minutes of the user talking into a
-    silence that was never going to break.
-    """
-    built = adapter(monkeypatch, [[]])
-    built.poll = 0.001
-    built.timeout = 30
-    built.ack_timeout = 0.02
-    with pytest.raises(RuntimeError) as error:
-        await collect(built)
-    assert "did not read that message" in str(error.value)
-
-
-async def test_other_rollout_activity_does_not_acknowledge_the_question(monkeypatch):
-    built = adapter(monkeypatch, [[{"type": "event_msg", "payload": {"type": "token_count"}}], []])
-    built.poll = 0.01
-    built.timeout = 1
-    built.ack_timeout = 0.02
-    with pytest.raises(RuntimeError) as error:
-        await collect(built)
-    assert "did not read that message" in str(error.value)

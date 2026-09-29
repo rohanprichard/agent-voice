@@ -466,6 +466,8 @@ class ManagedSession:
             if revision is not None and revision != self.room.revision:
                 return
             await self._cancel()
+            if hasattr(self.adapter, "stop_speaking"):
+                self.adapter.stop_speaking()
             if self.adapter:
                 self.status = "ready"
             await self.changed()
@@ -696,6 +698,9 @@ class ManagedSession:
                 return
             if event_type == "turn.accepted":
                 self.room.mark_timing(event["turn_id"], "accepted_ms", time.time_ns() / 1_000_000)
+                if self.tool:
+                    self.tool = None
+                    await self.changed()
                 return
             if event_type.startswith("message."):
                 item_id = data["item_id"]
@@ -730,6 +735,10 @@ class ManagedSession:
                     completed.add(item_id)
                 message["kind"] = data.get("kind", "message")
                 if message["text"].strip():
+                    # The last tool line stays on the pill until the agent says something.
+                    if self.tool:
+                        self.tool = None
+                        await self.changed()
                     self.room.mark_timing(
                         event["turn_id"], "first_message_ms", time.time_ns() / 1_000_000
                     )
@@ -738,7 +747,7 @@ class ManagedSession:
                 if added or event_type == "message.done":
                     enqueue_speech(item_id, added, event_type == "message.done")
             elif event_type == "tool.status":
-                self.tool = data["text"] if data.get("status") == "active" else None
+                self.tool = data.get("text") or None
                 await self.changed()
             elif event_type == "usage":
                 self.usage = data["usage"]
