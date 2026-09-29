@@ -82,7 +82,7 @@ The commands exchange private files with the app. Thus, they work when a sandbox
 
 Hermes and OpenClaw also have experimental adapters for an API session or a Gateway session.
 Run `talktome providers` to see the connection methods that are ready.
-[Agent support](docs/AGENT_SUPPORT.md) gives the setup, the limits, and the interruption behavior.
+[Agent support](docs/AGENT_SUPPORT.md) gives the setup and the limits.
 
 [Agent protocol](docs/AGENT_API.md) gives the commands, the ring flow, and the local HTTP interface.
 
@@ -101,11 +101,7 @@ This feature is experimental. See [remote bridge](docs/REMOTE_BRIDGE.md).
 
 ## During a call
 
-The microphone stays active while the agent speaks.
-If you speak during a reply, the reply pauses.
-If the app hears words, it clears the old reply and starts a new turn. If it hears no words, the reply continues.
-The agent receives a short report of how much of its last reply played.
-Codex and cooperative hosts keep control of their work. An interruption does not stop a tool that already started.
+After the agent finishes its reply, speak to start the next turn.
 
 TalkToMe uses Smart Turn, a small local model, to decide when you finished speaking.
 Settings can select a fixed pause instead. See [Smart Turn](docs/SMART_TURN.md).
