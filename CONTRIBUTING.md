@@ -36,6 +36,20 @@ Some scripts in `scripts/` are manual smoke tests. They start real agents or rea
 5. Update `README.md` or the files in `docs/` when you change behavior that users see.
 6. Add a line to `CHANGELOG.md` under **Unreleased**.
 
+## Make a release
+
+The version is in three files: `package.json`, `pyproject.toml`, and `src/talktome/__init__.py`.
+
+1. Set the same version in the three files.
+2. Run `npm install --package-lock-only` and `uv lock` to update the lock files.
+3. Move the **Unreleased** lines in `CHANGELOG.md` under the new version.
+4. Commit the change, then push a tag such as `v0.2.0`.
+
+The release workflow stops if the tag does not match the three files.
+It builds the disk image and the zip, then attaches them to a GitHub release.
+The job summary shows the `sha256` value for the Homebrew cask.
+If the repository variable `PUBLISH_PYPI` is `true`, the workflow also publishes the Python package to PyPI.
+
 ## Style
 
 - Python: ruff controls lint. Use the settings in `pyproject.toml`.

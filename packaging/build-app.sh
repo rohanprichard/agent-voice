@@ -78,7 +78,7 @@ cat > "$NOTCH_APP/Contents/Info.plist" <<PLIST
 PLIST
 
 echo "==> building the bundle and the disk image"
-npx electron-builder --mac
+npx electron-builder --mac --publish never
 
 # Verified by mounting rather than by trusting the filenames: a disk image that
 # builds and does not open is the failure this catches.
