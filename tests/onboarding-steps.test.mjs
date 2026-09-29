@@ -3,7 +3,14 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { ALL_STEPS, resumeStep, setupSteps } from "../src/talktome/static/onboarding-steps.js";
+import {
+  ALL_STEPS,
+  agentNames,
+  listText,
+  localSpeechNotice,
+  resumeStep,
+  setupSteps,
+} from "../src/talktome/static/onboarding-steps.js";
 
 const read = (relative) =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
@@ -57,4 +64,27 @@ test("The notch helper stops when the native surface cannot show", () => {
   // No helper starts when the measured display has no notch.
   assert.match(main, /nativeGeometry\.notchDepth <= 0\)\s*return;/);
   assert.match(main, /if \(notchGlow === child && !nativeNotch\) child\.kill\(\);/);
+});
+
+test("Setup shows the local speech sizes from the catalog", () => {
+  const models = [
+    { name: "Whisper Small", size_mb: 484 },
+    { name: "Whisper Base · English", size_mb: 145 },
+  ];
+  assert.equal(
+    localSpeechNotice(models, 114119327 + 28214398),
+    "Local speech downloads models first: Whisper Small 484 MB or Whisper Base · English 145 MB, and Kokoro 142 MB.",
+  );
+  assert.equal(localSpeechNotice([], 1), "");
+  assert.equal(
+    localSpeechNotice([{ name: "Whisper Small", size_mb: 484 }]),
+    "Local speech downloads models first: Whisper Small 484 MB.",
+  );
+});
+
+test("Setup names each agent that gets the skill", () => {
+  assert.deepEqual(agentNames([{ id: "codex" }, { id: "claude" }, { id: "other" }]), ["Codex", "Claude Code", "other"]);
+  assert.equal(listText(["Codex"]), "Codex");
+  assert.equal(listText(["Codex", "Claude Code"]), "Codex and Claude Code");
+  assert.equal(listText(["Codex", "Claude Code", "Hermes"]), "Codex, Claude Code and Hermes");
 });

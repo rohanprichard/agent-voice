@@ -1,4 +1,5 @@
 import { Microphone } from "./audio.js";
+import { agentNames } from "./onboarding-steps.js";
 import { AudioQueue, currentAudioEvent } from "./playback.js";
 import { WebAudioPlayer } from "./player.js";
 import { RealtimeInput, supportsRealtimeRate } from "./realtime-input.js";
@@ -103,9 +104,48 @@ function renderMicrophonePermission() {
       ? "Microphone allowed"
       : microphonePermission === "denied" ||
           microphonePermission === "restricted"
-        ? "Access denied in system settings."
+        ? "Access is off. Turn on TalkToMe in System Settings."
         : "";
+  $("open-microphone-settings").classList.toggle(
+    "hidden",
+    !window.talktomeDesktop?.openSystemSettings ||
+      !["denied", "restricted"].includes(microphonePermission),
+  );
 }
+
+let loginItem = { available: false, enabled: false, needsApproval: false };
+
+function renderLoginItem() {
+  $("login-item").checked = loginItem.enabled;
+  $("login-item").disabled = !loginItem.available;
+  $("open-login-items").classList.toggle("hidden", !loginItem.needsApproval);
+  $("login-item-status").textContent = !loginItem.available
+    ? "Open at login works in the installed app."
+    : loginItem.needsApproval
+      ? "Allow TalkToMe in System Settings → General → Login Items."
+      : "";
+}
+
+window.talktomeDesktop?.loginItem?.()?.then((state) => {
+  loginItem = state;
+  renderLoginItem();
+})?.catch(() => {});
+renderLoginItem();
+
+$("login-item").addEventListener("change", async () => {
+  try {
+    loginItem = await window.talktomeDesktop.setLoginItem($("login-item").checked);
+  } catch (error) {
+    notice(error.message);
+  }
+  renderLoginItem();
+});
+$("open-login-items").addEventListener("click", () =>
+  window.talktomeDesktop?.openSystemSettings?.("login-items")?.catch?.((error) => notice(error.message)),
+);
+$("open-microphone-settings").addEventListener("click", () =>
+  window.talktomeDesktop?.openSystemSettings?.("microphone")?.catch?.((error) => notice(error.message)),
+);
 
 function notice(message) {
   $("notice-text").textContent = message;
@@ -248,6 +288,11 @@ function renderAgents() {
     rows.push(row);
   }
   $("agent-list").replaceChildren(...rows);
+  $("admin-install").classList.toggle(
+    "hidden",
+    !skillReport?.admin_install || !window.talktomeDesktop?.installCommandForAllUsers,
+  );
+  $("install-all-users").disabled = agentBusy;
 }
 
 // Two halves, one step: instructions and the command they tell an agent to run.
@@ -256,12 +301,37 @@ function renderAgents() {
 function skillState(report) {
   const missing = (report.hosts || []).filter((host) => !host.skill);
   if (missing.length)
-    return `Install or update the skill for ${missing.map((host) => ({ codex: "Codex", hermes: "Hermes", openclaw: "OpenClaw" })[host.id] || host.id).join(", ")}`;
+    return `Install or update the skill for ${agentNames(missing).join(", ")}`;
   if (report.installed) return "Your agent can ring you";
   if (report.skill && !report.command) return "Installed, but the talktome command is not on PATH";
   if (report.command && !report.skill) return "The command is ready, but the skill is missing";
   return "Adds the skill and the talktome command";
 }
+
+// The server writes the script first, and the main process copies it into
+// /usr/local/bin after the macOS administrator prompt.
+async function installForAllUsers() {
+  agentBusy = true;
+  renderAgents();
+  try {
+    let installed = false;
+    try {
+      installed = Boolean((await post("/skill/install", {})).installed);
+    } catch (error) {
+      // Only this refusal stages the script. Any other one is the real answer.
+      if (!error.message.includes("Install for all users")) throw error;
+    }
+    if (!installed) await window.talktomeDesktop.installCommandForAllUsers();
+    skillReport = await api("/skill");
+    notice("The talktome command is installed for all users.");
+  } catch (error) {
+    notice(error.message);
+  } finally {
+    agentBusy = false;
+    renderAgents();
+  }
+}
+$("install-all-users").addEventListener("click", () => installForAllUsers());
 
 async function installSkill() {
   agentBusy = true;
@@ -357,7 +427,7 @@ function renderProviders() {
     kokoro.error ||
     (kokoro.status === "loading"
       ? "Load the voice model…"
-      : `${kokoro.progress || 0}% · ${Math.round((kokoro.downloaded_bytes || 0) / 1e6)} MB of 142 MB`);
+      : `${kokoro.progress || 0}% · ${Math.round((kokoro.downloaded_bytes || 0) / 1e6)} MB of ${Math.round((kokoro.total_bytes || 0) / 1e6)} MB`);
   $("elevenlabs-key-status").textContent = eleven.configured
     ? eleven.remembered
       ? "Key connected. The system keychain stores the key."

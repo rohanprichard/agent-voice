@@ -415,6 +415,13 @@ input[type="checkbox"] {
   justify-content: space-between;
   gap: 12px;
 }
+.admin-install {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+}
 .agent-list {
   display: flex;
   flex-direction: column;
