@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # The app targets macOS, and some tests use macOS file events.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: uv sync --frozen
+      - run: uv run ruff check
+      - run: uv run pytest -q
+      # The Node tests use only built-in modules, so npm ci is not needed.
+      - run: node --test tests/*.test.mjs

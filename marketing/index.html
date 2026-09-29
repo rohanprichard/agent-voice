@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10110f">
+  <meta name="description" content="TalkToMe brings voice calls to the coding agent you already use.">
+  <title>TalkToMe — Talk to your coding agent</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #10110f;
+      --panel: #191b18;
+      --muted: #a3a79c;
+      --ink: #f5f4ed;
+      --lime: #d3f36b;
+      --line: rgba(245, 244, 237, .13);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); }
+    a { color: inherit; text-decoration: none; }
+    .wrap { width: min(1120px, calc(100% - 48px)); margin: 0 auto; }
+    header { height: 76px; display: flex; align-items: center; border-bottom: 1px solid var(--line); }
+    nav { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+    .brand { display: flex; align-items: center; gap: 11px; font-size: 16px; font-weight: 650; letter-spacing: -.03em; }
+    .brand-mark { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: var(--lime); color: #16180f; }
+    .brand-mark svg { width: 17px; }
+    .nav-right { display: flex; align-items: center; gap: 28px; color: var(--muted); font-size: 13px; }
+    .nav-right a:hover, .text-link:hover { color: var(--ink); }
+    .button { display: inline-flex; justify-content: center; align-items: center; gap: 10px; padding: 13px 18px; border-radius: 9px; background: var(--lime); color: #15170f; font-size: 13px; font-weight: 700; transition: transform .2s, background .2s; }
+    .button:hover { transform: translateY(-2px); background: #e0ff85; }
+    .button svg { width: 15px; }
+    .hero { min-height: 610px; display: grid; grid-template-columns: 1.08fr .92fr; gap: 48px; align-items: center; padding: 78px 0 88px; }
+    .eyebrow { display: inline-flex; align-items: center; gap: 9px; margin-bottom: 22px; color: var(--lime); font-size: 11px; font-weight: 700; letter-spacing: .15em; text-transform: uppercase; }
+    .eyebrow::before { content: ""; width: 20px; height: 1px; background: currentColor; }
+    h1 { max-width: 610px; margin: 0; font-size: clamp(52px, 6.3vw, 82px); font-weight: 560; letter-spacing: -.075em; line-height: .99; }
+    h1 em { color: var(--lime); font-style: normal; }
+    .intro { max-width: 455px; margin: 24px 0 29px; color: var(--muted); font-size: 17px; line-height: 1.65; }
+    .actions { display: flex; align-items: center; gap: 22px; }
+    .text-link { display: inline-flex; align-items: center; gap: 7px; color: #d3d5cb; font-size: 13px; }
+    .text-link svg { width: 14px; }
+    .availability { margin-top: 27px; color: #73786d; font-size: 11px; }
+    .visual { position: relative; min-height: 420px; display: grid; place-items: center; }
+    .glow { position: absolute; width: 390px; height: 390px; border-radius: 50%; background: radial-gradient(circle, rgba(181, 216, 95, .19), rgba(181, 216, 95, 0) 68%); filter: blur(8px); }
+    .orb { position: absolute; width: 290px; height: 290px; border-radius: 50%; background: radial-gradient(circle at 36% 30%, #e1f9a0 0%, #b5d85f 26%, #738b3d 48%, #22291a 72%, #121410 100%); box-shadow: inset -24px -25px 50px rgba(0,0,0,.58), inset 10px 12px 34px rgba(240,255,190,.34), 0 0 80px rgba(183,220,97,.17); }
+    .orb::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: repeating-radial-gradient(ellipse at 34% 43%, transparent 0 9px, rgba(244,255,203,.09) 10px 11px, transparent 12px 17px); opacity: .48; mask-image: radial-gradient(ellipse at 35% 34%, #000 4%, transparent 70%); }
+    .call-card { position: absolute; right: 2px; bottom: 12px; width: 265px; padding: 17px; border: 1px solid rgba(255,255,255,.13); border-radius: 14px; background: rgba(27,29,25,.88); box-shadow: 0 20px 65px rgba(0,0,0,.45); backdrop-filter: blur(18px); }
+    .card-top { display: flex; align-items: center; justify-content: space-between; padding-bottom: 15px; border-bottom: 1px solid var(--line); color: #9ca194; font-size: 10px; }
+    .live { display: flex; align-items: center; gap: 6px; color: var(--lime); text-transform: uppercase; letter-spacing: .12em; }
+    .live i { width: 6px; height: 6px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 8px var(--lime); }
+    .chat { padding: 16px 0 5px; }
+    .speaker { margin-bottom: 7px; color: #7c8275; font-size: 9px; text-transform: uppercase; letter-spacing: .12em; }
+    .line { margin: 0 0 15px; color: #eceee5; font-size: 12px; line-height: 1.5; }
+    .line.agent { color: #c4d99a; }
+    .controls { display: flex; justify-content: center; gap: 11px; padding-top: 10px; }
+    .control { width: 29px; height: 29px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; color: #aeb3a7; }
+    .control svg { width: 12px; }
+    .control.end { border-color: #f27565; background: #f27565; color: #23120e; }
+    .strip { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .strip-inner { min-height: 78px; display: flex; align-items: center; justify-content: space-between; gap: 20px; color: #9da196; font-size: 12px; }
+    .strip-label { color: #6f7469; font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+    .host { display: flex; align-items: center; gap: 9px; color: #dedfd7; }
+    .host svg { width: 16px; height: 16px; color: var(--lime); }
+    .features { padding: 100px 0 110px; }
+    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 42px; }
+    .section-head h2 { max-width: 470px; margin: 0; font-size: clamp(34px, 4vw, 49px); font-weight: 540; letter-spacing: -.06em; line-height: 1.05; }
+    .section-head p { max-width: 330px; margin: 0 0 3px; color: var(--muted); font-size: 14px; line-height: 1.6; }
+    .feature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 13px; }
+    .feature { min-height: 215px; padding: 24px; border: 1px solid var(--line); border-radius: 13px; background: linear-gradient(145deg, rgba(255,255,255,.035), transparent 75%); }
+    .feature-icon { width: 35px; height: 35px; display: grid; place-items: center; margin-bottom: 29px; border: 1px solid rgba(211,243,107,.28); border-radius: 10px; color: var(--lime); }
+    .feature-icon svg { width: 17px; }
+    .feature h3 { margin: 0 0 9px; font-size: 15px; font-weight: 620; letter-spacing: -.02em; }
+    .feature p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
+    .closing { padding: 52px 0; border-top: 1px solid var(--line); background: #141612; }
+    .closing-inner { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    .closing h2 { margin: 0 0 8px; font-size: 27px; font-weight: 540; letter-spacing: -.05em; }
+    .closing p { margin: 0; color: var(--muted); font-size: 13px; }
+    footer { padding: 23px 0 32px; color: #74796f; font-size: 11px; }
+    .footer-inner { display: flex; justify-content: space-between; gap: 20px; }
+    .footer-links { display: flex; gap: 19px; }
+    .footer-links a:hover { color: var(--ink); }
+    @media (max-width: 760px) {
+      .wrap { width: min(100% - 36px, 540px); }
+      header { height: 65px; }
+      .nav-right { gap: 15px; }
+      .nav-right .nav-about { display: none; }
+      .nav-right .button { padding: 10px 13px; font-size: 11px; }
+      .hero { min-height: auto; grid-template-columns: 1fr; gap: 8px; padding: 72px 0 50px; }
+      h1 { font-size: clamp(54px, 13vw, 76px); }
+      .intro { font-size: 15px; }
+      .visual { min-height: 360px; }
+      .orb { width: 245px; height: 245px; }
+      .glow { width: 340px; height: 340px; }
+      .call-card { right: 0; bottom: -1px; }
+      .strip-inner { min-height: auto; padding: 22px 0; justify-content: flex-start; flex-wrap: wrap; gap: 17px 24px; }
+      .strip-label { width: 100%; }
+      .features { padding: 74px 0; }
+      .section-head { display: block; margin-bottom: 28px; }
+      .section-head p { margin-top: 16px; }
+      .feature-grid { grid-template-columns: 1fr; }
+      .feature { min-height: auto; }
+      .feature-icon { margin-bottom: 20px; }
+      .closing-inner { align-items: flex-start; flex-direction: column; }
+      .footer-inner { flex-direction: column; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }
+  </style>
+</head>
+<body>
+  <header>
+    <nav class="wrap" aria-label="Main navigation">
+      <a class="brand" href="#top" aria-label="TalkToMe home">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3v18M7.5 6v12m9-12v12M3 9v6m18-6v6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+        TalkToMe
+      </a>
+      <div class="nav-right">
+        <a class="nav-about" href="#features">How it works</a>
+        <a href="https://github.com/rohanprichard/talktome" aria-label="View TalkToMe on GitHub">GitHub ↗</a>
+        <a class="button" href="https://github.com/rohanprichard/talktome#install-and-start">Get started <svg viewBox="0 0 20 20" fill="none"><path d="M4 10h12m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="wrap hero">
+      <div>
+        <div class="eyebrow">A voice for your workflow</div>
+        <h1>Your coding agent,<br><em>on the line.</em></h1>
+        <p class="intro">Step away from the keyboard without stepping out of the conversation. TalkToMe turns the coding agent you already use into a voice call.</p>
+        <div class="actions">
+          <a class="button" href="https://github.com/rohanprichard/talktome#install-and-start">Explore TalkToMe <svg viewBox="0 0 20 20" fill="none"><path d="M4 10h12m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+          <a class="text-link" href="#features">See how it works <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12m-5-5 5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+        </div>
+        <div class="availability">Free and open source · macOS · MIT license</div>
+      </div>
+      <div class="visual" aria-label="Abstract green orb with an example voice call interface">
+        <div class="glow"></div><div class="orb"></div>
+        <div class="call-card">
+          <div class="card-top"><span>Codex session</span><span class="live"><i></i> Live call</span></div>
+          <div class="chat">
+            <div class="speaker">You</div><p class="line">Can you explain that change?</p>
+            <div class="speaker">Your agent</div><p class="line agent">Sure. I updated the call flow so you can speak over a reply.</p>
+          </div>
+          <div class="controls" aria-hidden="true">
+            <span class="control"><svg viewBox="0 0 20 20" fill="none"><path d="M7 4 4 7H2v6h2l3 3V4Zm4 3 5 6m0-6-5 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <span class="control end"><svg viewBox="0 0 20 20" fill="none"><path d="m5 6 10 8M15 6 5 14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+            <span class="control"><svg viewBox="0 0 20 20" fill="none"><path d="M10 3v8m-4-4v2a4 4 0 0 0 8 0V7m-4 8v3m-3 0h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="strip" aria-label="Supported agent hosts">
+      <div class="wrap strip-inner">
+        <span class="strip-label">Works with your agent</span>
+        <span class="host"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2 2.8 7v10L12 22l9.2-5V7L12 2Z" stroke="currentColor" stroke-width="1.5"/><path d="m8 12 2.5 2.5L16 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Codex</span>
+        <span class="host">Claude Code</span>
+        <span class="host">Hermes</span>
+        <span class="host">OpenClaw</span>
+        <span class="host">Other CLI agents</span>
+      </div>
+    </section>
+
+    <section class="wrap features" id="features">
+      <div class="section-head">
+        <h2>Keep the conversation moving.</h2>
+        <p>Talk naturally. Your agent can answer out loud, and the call stays ready for your next thought.</p>
+      </div>
+      <div class="feature-grid">
+        <article class="feature">
+          <div class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3v18M7.5 6v12m9-12v12M3 9v6m18-6v6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></div>
+          <h3>Speak, then keep going</h3>
+          <p>Ask a question in your own words. TalkToMe sends it to the agent session you already have open.</p>
+        </article>
+        <article class="feature">
+          <div class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3a9 9 0 1 0 9 9M12 7v5l3 2m2.5-10.5h4v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <h3>Jump in at any time</h3>
+          <p>Speak while the agent replies. TalkToMe pauses playback and starts a new turn when it hears you.</p>
+        </article>
+        <article class="feature">
+          <div class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3 4 6v5c0 5 3.4 8.3 8 10 4.6-1.7 8-5 8-10V6l-8-3Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <h3>Choose how speech runs</h3>
+          <p>Use local speech models after download, or connect optional ElevenLabs speech services in Settings.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="closing">
+      <div class="wrap closing-inner">
+        <div><h2>Your next idea can be spoken.</h2><p>Meet your coding agent on the other side of the call.</p></div>
+        <a class="button" href="https://github.com/rohanprichard/talktome#install-and-start">Get started on GitHub <svg viewBox="0 0 20 20" fill="none"><path d="M4 10h12m-5-5 5 5-5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+      </div>
+    </section>
+  </main>
+  <footer class="wrap">
+    <div class="footer-inner"><span>© 2026 TalkToMe · Open source under the MIT license</span><div class="footer-links"><a href="https://github.com/rohanprichard/talktome">GitHub</a><a href="https://github.com/rohanprichard/talktome/blob/main/SECURITY.md">Security</a></div></div>
+  </footer>
+</body>
+</html>

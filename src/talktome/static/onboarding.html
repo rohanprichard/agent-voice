@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Set up TalkToMe</title>
+    <script src="/theme.js"></script>
+    <link rel="icon" href="/mark.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/tokens.css" />
+    <link rel="stylesheet" href="/onboarding.css" />
+    <script type="module" src="/onboarding.js"></script>
+  </head>
+  <body>
+    <main class="setup-panel">
+      <header class="panel-header">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 48 28" fill="none">
+            <path d="M2 15 C7 15 8 8 13 8 C18 8 19 21 24 21 C29 21 30 5 35 5 C40 5 41 14 46 14" />
+            <path d="M2 14 C7 14 8 20 13 20 C18 20 19 7 24 7 C29 7 30 17 35 17 C40 17 41 10 46 10" />
+          </svg>
+        </span>
+        <span class="brand-name">TalkToMe</span>
+        <span class="step-count" id="step-count">1 / 6</span>
+        <button class="ghost-button icon-button" id="close-setup" type="button" aria-label="Close setup">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+        </button>
+      </header>
+
+      <div class="step-body">
+        <section class="step" data-step="welcome">
+          <div class="feature-art welcome-art" aria-hidden="true">
+            <svg viewBox="0 0 120 66" fill="none">
+              <path d="M5 34 C20 34 22 13 37 13 C52 13 53 52 67 52 C81 52 82 20 96 20 C106 20 109 33 115 33" />
+              <path d="M5 32 C20 32 22 50 37 50 C52 50 53 16 67 16 C81 16 82 46 96 46 C106 46 109 29 115 29" />
+            </svg>
+          </div>
+          <h1>Calls with your agent.</h1>
+          <p class="step-copy">Your agent rings you from the session you already use. You answer and talk.</p>
+          <div class="step-actions">
+            <button class="primary-button" id="welcome-next" type="button">Get started</button>
+          </div>
+        </section>
+
+        <section class="step" data-step="microphone" hidden>
+          <div class="feature-art" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <rect x="9" y="3" width="6" height="11" rx="3" />
+              <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" />
+            </svg>
+          </div>
+          <h1>Microphone</h1>
+          <p class="step-copy">TalkToMe needs microphone access during calls.</p>
+          <p class="status-line" id="microphone-status" role="status">Checking access…</p>
+          <div class="step-actions">
+            <button class="primary-button" id="microphone-next" type="button">Allow microphone</button>
+            <button class="ghost-button" id="microphone-skip" type="button">Later</button>
+          </div>
+        </section>
+
+        <section class="step" data-step="voice" hidden>
+          <div class="feature-art voice-art" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+          <h1>Speech</h1>
+          <p class="step-copy">Add an ElevenLabs API key for speech. You can use local speech in Settings instead.</p>
+          <form id="voice-form">
+            <label class="field-label" for="voice-key">ElevenLabs API key</label>
+            <div class="key-field">
+              <input id="voice-key" type="password" autocomplete="off" spellcheck="false" maxlength="512" placeholder="Paste your API key" />
+              <button id="key-visibility" type="button" aria-label="Show API key">Show</button>
+            </div>
+            <label class="remember-label"><input id="remember-key" type="checkbox" checked /> Save the key in the system keychain</label>
+            <p class="status-line" id="voice-status" role="status"></p>
+            <div class="step-actions">
+              <button class="primary-button" id="voice-save" type="submit">Connect</button>
+              <div class="secondary-actions">
+                <button class="ghost-button" id="voice-skip" type="button">Later</button>
+                <button class="ghost-button" id="local-models" type="button">Open speech settings</button>
+              </div>
+            </div>
+          </form>
+        </section>
+
+        <section class="step" data-step="agent" hidden>
+          <div class="feature-art" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <rect x="3" y="4" width="18" height="16" rx="2" />
+              <path d="M7 9l3 3-3 3M12 15h5" />
+            </svg>
+          </div>
+          <h1>Agent connection</h1>
+          <p class="step-copy">Install the skill so your agent can call you.</p>
+          <p class="status-line" id="agent-status" role="status">Checking the connection…</p>
+          <div class="step-actions">
+            <button class="primary-button" id="agent-install" type="button">Install</button>
+            <button class="ghost-button" id="agent-skip" type="button">Later</button>
+          </div>
+        </section>
+
+        <section class="step" data-step="color" hidden>
+          <!-- The one colored picture in setup: it previews the notch glow. -->
+          <div class="feature-art color-art" aria-hidden="true"><span class="color-notch"></span></div>
+          <h1>Glow color</h1>
+          <p class="step-copy">The notch glows in this color while a call is live.</p>
+          <div class="color-list" id="color-list" role="radiogroup" aria-label="Glow color">
+            <button type="button" role="radio" data-color="amber" aria-label="Amber" aria-checked="true"></button>
+            <button type="button" role="radio" data-color="blue" aria-label="Blue" aria-checked="false"></button>
+            <button type="button" role="radio" data-color="violet" aria-label="Violet" aria-checked="false"></button>
+            <button type="button" role="radio" data-color="green" aria-label="Green" aria-checked="false"></button>
+            <button type="button" role="radio" data-color="pink" aria-label="Pink" aria-checked="false"></button>
+            <button type="button" role="radio" data-color="cyan" aria-label="Cyan" aria-checked="false"></button>
+          </div>
+          <p class="color-name" id="color-name">Amber</p>
+          <div class="step-actions">
+            <button class="primary-button" id="color-next" type="button">Continue</button>
+          </div>
+        </section>
+
+        <section class="step" data-step="ready" hidden>
+          <p class="badge" id="ready-eyebrow">All set</p>
+          <h1 id="ready-title">Ask your agent to call.</h1>
+          <p class="step-copy" id="ready-copy">Say “Call me with TalkToMe.”</p>
+          <div class="ready-checks" id="ready-checks" role="status"></div>
+          <p class="status-line" id="finish-status" role="status" hidden></p>
+          <div class="step-actions">
+            <button class="primary-button" id="finish-setup" type="button">Finish setup</button>
+          </div>
+        </section>
+      </div>
+
+      <footer class="panel-footer">
+        <button class="ghost-button" id="back-button" type="button">Back</button>
+        <div class="progress" id="progress" aria-label="Setup progress"></div>
+      </footer>
+    </main>
+  </body>
+</html>

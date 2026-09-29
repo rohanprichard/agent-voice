@@ -1,0 +1,33 @@
+.DS_Store
+node_modules/
+dist/
+target/
+*.dmg
+*.exe
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+*.key
+.agentcall/
+models/
+*.onnx
+*.bin
+*.gguf
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+.talktome/
+artifacts/
+build/
+*.egg-info/
+
+# Stray session files
+*.ses
+
+# Local Claude Code worktrees
+.claude/

@@ -1,0 +1,84 @@
+{
+  "name": "talktome",
+  "version": "0.1.0",
+  "description": "Voice calls with the coding agent you already use. A macOS menu-bar app.",
+  "license": "MIT",
+  "author": "Rohan Richard",
+  "homepage": "https://github.com/rohanprichard/talktome",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rohanprichard/talktome.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rohanprichard/talktome/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "private": true,
+  "type": "module",
+  "main": "desktop/main.cjs",
+  "scripts": {
+    "start": "node scripts/start.mjs",
+    "reset": "node scripts/reset.mjs",
+    "test": "uv run pytest && node --test tests/*.test.mjs",
+    "test:attach": "uv run python scripts/attach_smoke.py",
+    "test:stream": "uv run python scripts/stream_smoke.py",
+    "lint": "uv run ruff check src tests scripts",
+    "test:call": "node scripts/call_smoke.mjs",
+    "test:attach-call": "uv run python scripts/attach_call_smoke.py",
+    "build:app": "sh packaging/build-app.sh",
+    "build:notch-preview": "sh scripts/build-notch-preview.sh",
+    "build:dmg": "sh packaging/build-app.sh --skip-server"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "electron": "44.4.3",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.rohanprichard.talktome",
+    "productName": "TalkToMe",
+    "directories": {
+      "output": "dist/app",
+      "buildResources": "build"
+    },
+    "files": [
+      "desktop/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/frozen/talktome-server",
+        "to": "talktome-server"
+      },
+      {
+        "from": "dist/native/NotchSurface.app",
+        "to": "notch-surface/NotchSurface.app"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.icns",
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "identity": null,
+      "hardenedRuntime": false,
+      "extendInfo": {
+        "LSUIElement": true
+      }
+    }
+  }
+}

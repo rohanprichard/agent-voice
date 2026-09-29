@@ -1,0 +1,59 @@
+NOTICE
+
+The TalkToMe source code uses the MIT license. See LICENSE.
+Its dependencies keep their own licenses.
+
+Packaged app
+
+The packaged macOS app bundles third-party packages. Two of them use the
+GNU General Public License, version 3 or later (GPL-3.0-or-later):
+
+- eSpeak NG, through the espeakng-loader package. It supplies phonemes to Kokoro.
+  https://github.com/espeak-ng/espeak-ng
+  https://github.com/thewh1teagle/espeakng-loader
+- phonemizer, which kokoro-onnx uses.
+  https://github.com/bootphon/phonemizer
+
+Because of these components, the packaged app as a whole is distributed under
+the terms of GPL-3.0-or-later. The TalkToMe source code alone remains MIT.
+licenses/GPL-3.0.txt contains the GPL text. The source code of each GPL
+component is available at the links above. The source code of TalkToMe is
+available from its public repository.
+
+The build writes licenses/THIRD_PARTY_LICENSES.txt into the app. That file
+lists every bundled Python package with its license text.
+
+Models and services that the app downloads or uses at run time
+
+The app does not bundle these files. It downloads them when the user selects them.
+
+- Whisper speech models, converted by SYSTRAN for faster-whisper. MIT.
+  https://huggingface.co/Systran
+  https://github.com/SYSTRAN/faster-whisper
+- Kokoro-82M voice model and voices, through kokoro-onnx. The model uses
+  Apache-2.0. kokoro-onnx uses MIT. The app downloads the ONNX conversion
+  from the kokoro-onnx model-files-v1.1 release.
+  https://huggingface.co/hexgrad/Kokoro-82M
+  https://github.com/thewh1teagle/kokoro-onnx/releases/tag/model-files-v1.1
+  https://github.com/thewh1teagle/kokoro-onnx
+- Pipecat Smart Turn v3 turn-detection model. BSD-2-Clause.
+  licenses/pipecat-smart-turn.txt contains its license.
+  https://huggingface.co/pipecat-ai/smart-turn-v3
+- ElevenLabs is an optional hosted service. Users supply their own API key.
+  Its terms and data retention rules apply.
+  https://elevenlabs.io/docs/api-reference/text-to-speech/convert
+  https://elevenlabs.io/docs/api-reference/speech-to-text/convert
+
+References
+
+These projects supplied design references. TalkToMe does not include their
+source code. If a later version includes their code, keep their copyright
+notices and licenses.
+
+- SpeakType inspired the model selection and download flow. MIT.
+  Copyright (c) Karan Singh. https://github.com/karansinghgit/speaktype
+- AgentCall supplied a reference for conversation events, interruption handling,
+  and agent bridges. https://github.com/pattern-ai-labs/agentcall
+- SKI and HeyClicky supplied product references for local voice interaction.
+  https://heyski.io
+  https://www.heyclicky.com
