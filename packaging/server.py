@@ -10,11 +10,6 @@ import multiprocessing
 import os
 import sys
 
-import uvicorn
-
-from talktome.app import create_app
-from talktome.config import announce_server
-
 
 def selftest():
     """Report what the frozen build can actually do.
@@ -137,7 +132,17 @@ def main():
         sys.argv = [argv[1], *argv[2:]]
         runpy.run_module(argv[1], run_name="__main__")
         return 0
-    port = int(os.environ.get("TALKTOME_PORT", "8765"))
+    serve(int(os.environ.get("TALKTOME_PORT", "8765")))
+
+
+def serve(port):
+    # Imported here, not at the top: every `talktome call` runs this binary with
+    # `-m`, and loading the server for it made each command slow.
+    import uvicorn
+
+    from talktome.app import create_app
+    from talktome.config import announce_server
+
     # Held for as long as this process is listening, so the `talktome` command can
     # tell the app is up without asking the network — which, inside an agent's
     # sandbox, tells it nothing and costs it a second copy on a taken port.
