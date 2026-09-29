@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__, agents, inbox
+from .calls import CallHistory, call_routes
 from .config import data_dir, get_token
 from .cooperative import CooperativeAdapter
 from .external_adapters import configure_external_provider, external_provider_status
@@ -167,6 +168,7 @@ def create_app(*, token=None, speech=None):
         if saved and saved in {m["id"] for m in MODELS}:
             setup_task = background(asyncio.to_thread(engine.setup, saved))
         background(watch_inbox())
+        background(history.prune_daily())
         if remote_connector is not None:
             background(remote_connector.run())
         yield
@@ -504,6 +506,10 @@ def create_app(*, token=None, speech=None):
     # calls behave exactly as they did before the remote bridge existed.
     remote_connector = start_connector(managed)
     app.state.remote_connector = remote_connector
+    history = CallHistory(data_dir() / "calls")
+    history.remote_prefix = f"{remote_connector.pair}:" if remote_connector else None
+    managed.history = history
+    app.include_router(call_routes(managed, history))
 
     def provider_report():
         return {
