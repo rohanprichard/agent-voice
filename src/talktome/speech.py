@@ -1,3 +1,4 @@
+import functools
 import io
 import json
 import logging
@@ -42,6 +43,7 @@ class Speech:
         self.model_id = None
         self.lock = threading.Lock()
         self.settings_lock = threading.Lock()
+        self._settings = None
         self.state = {"status": "needs_model", "progress": 0, "error": None, "model_id": None}
         self.kokoro = KokoroVoice(directory)
         self.elevenlabs = ElevenLabs(directory)
@@ -65,11 +67,14 @@ class Speech:
         return self.settings().get("model_id")
 
     def settings(self):
-        path = self.directory / "settings.json"
-        try:
-            return json.loads(path.read_text())
-        except (OSError, ValueError):
-            return {}
+        # status() runs for every event a client reads, so the file is read once
+        # and save_settings keeps this copy current.
+        if self._settings is None:
+            try:
+                self._settings = json.loads((self.directory / "settings.json").read_text())
+            except (OSError, ValueError):
+                self._settings = {}
+        return dict(self._settings)
 
     def saved_voice(self):
         return self.settings().get("voice", "default")
@@ -81,22 +86,25 @@ class Speech:
             temporary = self.directory / "settings.json.tmp"
             temporary.write_text(json.dumps(settings))
             temporary.replace(self.directory / "settings.json")
+            self._settings = settings
 
     def status(self):
-        provider = self.provider()
+        settings = self.settings()
+        provider = settings.get("tts_provider", "system")
+        recognition = settings.get("stt_provider", "whisper")
         available = {
             "system": bool(self.tts_command()),
             "kokoro": self.kokoro.state["status"] == "ready",
             "elevenlabs": bool(self.elevenlabs.key),
         }
         state = dict(self.state)
-        if self.recognition_provider() == "elevenlabs":
+        if recognition == "elevenlabs":
             state.update(status="ready" if self.elevenlabs.key else "needs_key", error=None)
         return {
             **state,
             "tts_available": available[provider],
-            "engine": "faster-whisper" if self.recognition_provider() == "whisper" else "scribe_v2",
-            "stt_provider": self.recognition_provider(),
+            "engine": "faster-whisper" if recognition == "whisper" else "scribe_v2",
+            "stt_provider": recognition,
             "tts_provider": provider,
             "local_stt": dict(self.state),
             "kokoro": dict(self.kokoro.state),
@@ -107,6 +115,7 @@ class Speech:
         }
 
     @staticmethod
+    @functools.cache
     def tts_command():
         return (
             shutil.which("say")

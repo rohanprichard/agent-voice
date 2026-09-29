@@ -482,3 +482,23 @@ def test_a_voice_that_was_never_in_the_account_still_reads_plainly(tmp_path):
     with pytest.raises(ValueError) as error:
         provider.resolve_voice("v-somebody-elses")
     assert "Select an ElevenLabs voice from the list." in str(error.value)
+
+
+def test_speech_status_reads_the_settings_file_once(tmp_path, monkeypatch):
+    engine = Speech(tmp_path)
+    engine.save_settings(tts_provider="system", stt_provider="whisper")
+    reads = []
+    real = type(tmp_path).read_text
+
+    def read_text(path, *args, **kwargs):
+        reads.append(path.name)
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(type(tmp_path), "read_text", read_text)
+    for _ in range(5):
+        engine.status()
+    assert "settings.json" not in reads
+    engine.save_settings(tts_provider="kokoro")
+    assert engine.status()["tts_provider"] == "kokoro"
+    # A new engine reads what the last one saved.
+    assert Speech(tmp_path).settings()["tts_provider"] == "kokoro"
