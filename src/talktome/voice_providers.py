@@ -6,7 +6,6 @@ import threading
 import wave
 
 import httpx
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +25,8 @@ KOKORO_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/mode
 
 
 def wav_audio(samples, sample_rate):
+    import numpy as np
+
     output = io.BytesIO()
     with wave.open(output, "wb") as file:
         file.setnchannels(1)
