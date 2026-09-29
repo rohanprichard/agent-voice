@@ -101,7 +101,7 @@ def test_nothing_is_written_outside_the_command_directories(tmp_path, safe_comma
 def test_the_command_runs_the_interpreter_the_app_runs(tmp_path, safe_command_dirs):
     path_env = command_env(safe_command_dirs)
     path = agents.install_command(tmp_path, "/app/.venv/bin/python", path_env)
-    assert 'exec "/app/.venv/bin/python" -m talktome "$@"' in path.read_text()
+    assert 'exec /app/.venv/bin/python -m talktome "$@"' in path.read_text()
 
 
 def test_a_command_directory_that_is_not_on_path_is_refused(tmp_path, safe_command_dirs):
@@ -132,7 +132,7 @@ def test_a_command_is_recognised_however_the_interpreter_is_spelled(
     mine = tmp_path / "commands" / "talktome"
     mine.parent.mkdir()
     mine.write_text(
-        f'#!/bin/sh\n# Written by TalkToMe\nexec "{tmp_path / "bin" / "python"}" -m talktome "$@"\n'
+        f'#!/bin/sh\n# Written by TalkToMe\nexec {tmp_path / "bin" / "python"} -m talktome "$@"\n'
     )
     monkeypatch.setattr(agents.shutil, "which", lambda name: str(mine))
     assert (
@@ -437,7 +437,7 @@ def test_a_checkout_on_an_external_disk_still_installs(tmp_path, safe_command_di
     path = agents.install_command(
         tmp_path, "/Volumes/Code/talktome/.venv/bin/python", command_env(safe_command_dirs)
     )
-    assert '"/Volumes/Code/talktome/.venv/bin/python"' in path.read_text()
+    assert 'exec /Volumes/Code/talktome/.venv/bin/python -m' in path.read_text()
 
 
 def test_a_packaged_app_counts_only_the_command_that_looks_it_up(tmp_path, safe_command_dirs):
@@ -459,7 +459,7 @@ def test_a_checkout_keeps_its_own_interpreter(tmp_path, safe_command_dirs):
         tmp_path, "/repo/.venv/bin/python", path_env, launcher='"/e/Electron" "/repo"'
     )
     text = path.read_text()
-    assert 'exec "/repo/.venv/bin/python" -m talktome "$@"' in text
+    assert 'exec /repo/.venv/bin/python -m talktome "$@"' in text
     assert "export TALKTOME_LAUNCH='\"/e/Electron\" \"/repo\"'" in text
     assert "mdfind" not in text
 
@@ -512,3 +512,15 @@ def test_the_skill_gives_claude_code_a_cooperative_call():
     text = agents.skill_source().read_text()
     assert "talktome call --agent claude --thread SESSION_ID" in text
     assert "| Claude Code | Cooperative commands in this session |" in text
+
+
+def test_the_dev_shim_runs_from_a_path_the_shell_would_expand(tmp_path):
+    folder = tmp_path / 'odd "$HOME" folder'
+    folder.mkdir()
+    python = folder / "python"
+    python.write_text('#!/bin/sh\necho "ran $*"\n')
+    python.chmod(0o755)
+    shim = tmp_path / "talktome"
+    shim.write_text(agents.command_script(str(python)))
+    result = subprocess.run(["/bin/sh", str(shim), "call"], capture_output=True, text=True, check=True)
+    assert result.stdout.strip() == "ran -m talktome call"
