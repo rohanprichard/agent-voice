@@ -146,6 +146,23 @@ Settings can select a fixed pause instead. See [Smart Turn](docs/SMART_TURN.md).
 
 Settings also sets the position of the call surface: **Bottom** or **Top center**.
 
+## Call history and call back
+
+Open **Calls…** from the menu bar item or from Settings. The Calls window lists each call, newest first.
+A missed call shows a count next to the menu bar icon and a macOS notification.
+**Call back** starts a call to the same session at once, with no ring.
+The **Recent** menu calls back one of the last five callers.
+
+| Agent | Call back |
+| --- | --- |
+| Codex | Joins the thread again through its terminal. If no terminal holds the thread, **Open in Terminal** runs `codex resume`. |
+| Claude Code | Runs `claude -p --resume` for each turn. Claude denies a tool that needs permission, unless your Claude settings allow it. |
+| Hermes, OpenClaw | Uses the saved session. |
+| Generic, remote | Not available. |
+
+Transcripts are off by default. Settings can keep them for 7 or 30 days.
+See [call history](docs/CALLS.md) for what the app stores and how to delete it.
+
 ## Speech providers
 
 | Function | Local option | ElevenLabs option |
@@ -170,6 +187,7 @@ The server listens only on `127.0.0.1:8765`. A generated local token protects it
 The desktop windows use an HTTP-only session cookie. Other web origins cannot use the interface.
 The app keeps its token, settings, and models in `~/Library/Application Support/talktome`.
 The app keeps up to 200 transcript messages and 512 events in memory. Closing the app clears them.
+The call history keeps the last 500 calls in `calls/` in the data directory. See [call history](docs/CALLS.md).
 
 The app connects to the network for these purposes only:
 
