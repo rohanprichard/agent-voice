@@ -37,6 +37,7 @@ const transcriptEmpty = document.getElementById("transcript-empty");
 const ringing = document.getElementById("ringing");
 const ringingName = document.getElementById("ringing-name");
 const acceptButton = document.getElementById("accept");
+const declineButton = document.getElementById("decline");
 const alertButton = document.getElementById("alert-action");
 const approvalCard = document.getElementById("approval");
 const approvalTool = document.getElementById("approval-tool");
@@ -555,6 +556,7 @@ interruptButton.addEventListener("click", () => command("interrupt"));
 transcriptToggle.addEventListener("click", () => setTranscriptOpen(!state.open));
 transcriptClose.addEventListener("click", () => setTranscriptOpen(false));
 acceptButton.addEventListener("click", () => command("accept"));
+declineButton.addEventListener("click", () => command("decline"));
 alertButton.addEventListener("click", () => command(alertButton.dataset.action || "dismiss"));
 document.getElementById("end").addEventListener("click", () => {
   // Let the closing animation play before the window is taken away.

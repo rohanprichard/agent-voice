@@ -866,6 +866,15 @@ html[data-surface="transcript"] #surface {
   background: var(--answer-hover);
 }
 
+#ringing button#decline {
+  background: var(--end);
+  color: var(--on-semantic);
+}
+
+#ringing button#decline:hover {
+  background: var(--end-hover);
+}
+
 /* While ringing, the call controls are not yet meaningful. */
 #surface[data-state="ringing"] #pill {
   display: none;

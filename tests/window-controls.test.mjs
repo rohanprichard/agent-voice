@@ -222,3 +222,15 @@ test("A missing or invalid saved theme starts dark, and System still works", () 
   window.setTalktomeTheme("nonsense");
   assert.equal(root.dataset.themePreference, "dark");
 });
+
+test("The ring can be declined on the pill, and it shows a notification", () => {
+  const callHtml = read("../src/talktome/static/call.html");
+  const callJs = read("../src/talktome/static/call.js");
+  assert.match(callHtml, /<button id="decline" aria-label="Decline the call"/);
+  assert.match(callJs, /declineButton\.addEventListener\("click", \(\) => command\("decline"\)\)/);
+  assert.match(main, /\["mute", "interrupt", "end", "accept", "decline",/);
+  assert.match(main, /new Notification\(\{/);
+  assert.match(main, /ringNotice\.on\("click", \(\) => restoreCallWindow\(callToken\)\)/);
+  // The surface stops its tone a little after the server's 30 second ring.
+  assert.match(callJs, /const RING_GUARD_MS = 32000;/);
+});

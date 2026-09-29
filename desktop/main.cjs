@@ -9,6 +9,7 @@ const {
   Tray,
   nativeImage,
   nativeTheme,
+  Notification,
   screen,
   shell,
 } = require("electron");
@@ -136,6 +137,27 @@ function readCallState(next) {
       ? { id: String(next.ring.id || ""), name: String(next.ring.name || "") }
       : null,
   };
+}
+
+// A macOS notification for the ring, so a call is seen even when the pill is
+// behind a full-screen app. The ring has its own tone, so the notification is
+// silent. Clicking it brings the ring forward.
+let ringNotice = null;
+let noticedRing = null;
+function notifyRing() {
+  const ring = callState.state === "ringing" ? callState.ring : null;
+  if ((ring?.id || null) === noticedRing) return;
+  noticedRing = ring?.id || null;
+  ringNotice?.close();
+  ringNotice = null;
+  if (!ring || !Notification.isSupported()) return;
+  ringNotice = new Notification({
+    title: ring.name || "A session",
+    body: "wants to talk. Answer or decline on the call pill.",
+    silent: true,
+  });
+  ringNotice.on("click", () => restoreCallWindow(callToken));
+  ringNotice.show();
 }
 
 function glowMode() {
@@ -1011,6 +1033,7 @@ app.whenReady().then(async () => {
         applyCallBounds();
       }
       updateNotchGlow();
+      notifyRing();
       syncWindows();
       return true;
     });
@@ -1067,7 +1090,7 @@ app.whenReady().then(async () => {
         if (!callWindow || event.sender !== callWindow.webContents) return;
         if (type === "settings") return openSettings();
         if (type === "mic-settings") return void shell.openExternal(SETTINGS_PANES.microphone);
-        if (!["mute", "interrupt", "end", "accept", "retry-mic", "dismiss"].includes(type))
+        if (!["mute", "interrupt", "end", "accept", "decline", "retry-mic", "dismiss"].includes(type))
           return;
         sendToWindow("talktome:call-command", type);
       });
