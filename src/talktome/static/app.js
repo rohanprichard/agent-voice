@@ -1062,7 +1062,14 @@ window.talktomeDesktop?.onCallCommand?.((type) => {
     callAlert = null;
     render();
   }
+  else if (type === "callback") void joinCallBack();
 });
+
+// A call back starts live with no ring to answer, so start the microphone here.
+async function joinCallBack() {
+  await refresh();
+  if (state.room.call_id && !microphone) await startMicrophone();
+}
 
 async function declineRing() {
   try {

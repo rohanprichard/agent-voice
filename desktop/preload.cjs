@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("talktomeDesktop", {
   setLoginItem: (enabled) => ipcRenderer.invoke("talktome:set-login-item", Boolean(enabled)),
   installCommandForAllUsers: () => ipcRenderer.invoke("talktome:install-command-all-users"),
   setGlowColor: (color) => ipcRenderer.invoke("talktome:glow-color", color),
+  openCalls: () => ipcRenderer.invoke("talktome:open-calls"),
   onOpenSettings: (callback) =>
     ipcRenderer.on("talktome:open-settings", () => callback()),
   onOnboardingComplete: (callback) =>
