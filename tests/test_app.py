@@ -286,3 +286,25 @@ def test_a_note_left_for_an_app_that_never_came_up_is_swept_on_startup(app):
         time.sleep(0.4)
 
     assert inbox.pending() == []
+
+
+def test_the_inbox_keeps_watching_after_a_failed_pass(app, monkeypatch, caplog):
+    real = inbox.pending
+    failures = []
+
+    def pending(*args, **kwargs):
+        if not failures:
+            failures.append(True)
+            raise OSError("The folder is busy.")
+        return real(*args, **kwargs)
+
+    async def hangup():
+        return {"status": "idle"}
+
+    monkeypatch.setattr(inbox, "pending", pending)
+    app.state.managed.hangup = hangup
+    with TestClient(app):
+        reply = wait_for_reply(inbox.ask("end"))
+
+    assert reply["result"] == {"status": "idle"}
+    assert "The inbox could not be read" in caplog.text

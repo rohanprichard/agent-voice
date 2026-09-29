@@ -130,10 +130,15 @@ def create_app(*, token=None, speech=None):
     smart_turn_enabled = engine.settings().get("smart_turn_enabled", True)
     remote_connector = None
 
+    def finished(task):
+        tasks.discard(task)
+        if not task.cancelled() and task.exception() is not None:
+            logger.error("A background task stopped.", exc_info=task.exception())
+
     def background(coroutine):
         task = asyncio.create_task(coroutine)
         tasks.add(task)
-        task.add_done_callback(tasks.discard)
+        task.add_done_callback(finished)
         return task
 
     def speech_status():
@@ -514,12 +519,20 @@ def create_app(*, token=None, speech=None):
         handled in its own task for the same reason — an `end` while a call is
         ringing should not have to wait for the ring to finish asking.
         """
-        inbox.ready()
-        inbox.sweep()
+        prepared = False
         while True:
-            for request in inbox.pending():
-                inbox.retire(request)
-                background(answer_request(request))
+            # A failed pass is logged and tried again. If this loop stops, no
+            # agent can ring the user.
+            try:
+                if not prepared:
+                    inbox.ready()
+                    inbox.sweep()
+                    prepared = True
+                for request in inbox.pending():
+                    inbox.retire(request)
+                    background(answer_request(request))
+            except Exception:
+                logger.exception("The inbox could not be read. TalkToMe tries again.")
             await asyncio.sleep(inbox.POLL)
 
     @app.get("/v1/managed")

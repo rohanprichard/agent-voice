@@ -366,27 +366,42 @@ class ManagedSession:
                 await self.decline(ring["id"])
 
     async def _release(self):
-        """Let go of an attached session without touching its room state."""
-        await self._cancel()
-        if self.voice_warmup:
-            self.voice_warmup.cancel()
+        """Let go of an attached session without touching its room state.
+
+        `close` holds the session lock while this runs, so no step may wait on
+        speech, and one failed step must not leave the others undone.
+        """
+        voice_warmup, self.voice_warmup = self.voice_warmup, None
+        voice_connection, self.voice_connection = self.voice_connection, None
+        adapter, self.adapter = self.adapter, None
+        speaker, self.speaker = self.speaker, None
+
+        async def stop(task):
+            task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
-                await self.voice_warmup
-            self.voice_warmup = None
-        if self.voice_connection:
-            await self.voice_connection.close()
-            self.voice_connection = None
-        if self.adapter:
-            await self.adapter.close()
-        self.adapter = None
-        if self.speaker:
-            await self.audio_queue.put(None)
-            await self.speaker
-            self.speaker = None
-        if self.room.agent and self.room.agent["client_id"] == self.client_id:
-            await self.room.disconnect()
-        self.client_id = None
-        self.options = None
+                await task
+
+        steps = [self._cancel]
+        if voice_warmup:
+            steps.append(lambda: stop(voice_warmup))
+        if voice_connection:
+            steps.append(voice_connection.close)
+        if adapter:
+            steps.append(adapter.close)
+        # A sentence can take a long time to synthesize. It is dropped, not waited for.
+        if speaker:
+            steps.append(lambda: stop(speaker))
+        for step in steps:
+            try:
+                await step()
+            except Exception:
+                logger.exception("A step of the call teardown failed.")
+        try:
+            if self.room.agent and self.room.agent["client_id"] == self.client_id:
+                await self.room.disconnect()
+        finally:
+            self.client_id = None
+            self.options = None
 
     def _project(self, cwd):
         directory = Path(cwd).expanduser().resolve()

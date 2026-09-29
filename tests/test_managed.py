@@ -820,3 +820,32 @@ def test_other_agents_refuse_whitespace_control_characters_and_long_ids(thread):
 def test_other_agents_accept_a_remote_pair_id_up_to_the_limit():
     assert managed_module.valid_session_id("pair-1:thread-1", "hermes") is True
     assert managed_module.valid_session_id("x" * 512, "generic") is True
+
+
+async def test_closing_does_not_wait_for_a_slow_sentence(tmp_path):
+    started = asyncio.Event()
+
+    async def synthesize(text):
+        started.set()
+        await asyncio.Event().wait()
+
+    async with session(tmp_path, synthesize) as (room, managed, _):
+        await managed.submit(await room.utterance(room.call_id, "hello"))
+        await started.wait()
+        async with asyncio.timeout(1):
+            await managed.close()
+        assert managed.speaker is None
+        assert room.agent is None
+
+
+async def test_a_failed_teardown_step_does_not_stop_the_others(tmp_path):
+    class BrokenClose(FakeAdapter):
+        async def close(self):
+            raise RuntimeError("The host went away.")
+
+    async with session(tmp_path, adapter=BrokenClose) as (room, managed, _):
+        speaker = managed.speaker
+        await managed.close()
+        assert speaker.done()
+        assert room.agent is None
+        assert managed.status == "disconnected"
