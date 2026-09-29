@@ -1,6 +1,6 @@
 # Call timing
 
-The call transcript shows the time from the end of speech to the first audio from the agent. It shows the latest voice turn.
+The app records the time from the end of speech to the first audio from the agent, for each voice turn. The call surface does not show these times. The app keeps them in `timings.json` in the data folder. `GET /v1/call/timings` returns them, and `call_id` selects one call.
 
 | Name | Start | End |
 | --- | --- | --- |
@@ -16,4 +16,4 @@ The microphone uses the selected pause before it sends speech. Quick waits 0.7 s
 
 This mark measures the audio graph. It does not measure the speaker or the time for sound to reach the listener.
 
-The call transcript shows a dash if a stage has no mark. Other agent types do not use `codex queue`.
+A stage with no mark is missing from the record. Other agent types do not use `codex queue`.

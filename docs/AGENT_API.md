@@ -105,7 +105,11 @@ If the user gives no answer in 180 seconds, the app denies the request.
 
 ## Events
 
-The desktop windows read the call through `GET /v1/state` and the long poll `GET /v1/events`.
+The desktop windows follow the call through the server-sent event stream `GET /v1/stream`.
+The stream sends one `snapshot` with the room, the speech state, and the session. Then it sends one `event` for each room event.
+An `event` other than `message.delta` also carries the room without its messages and the session.
+A client that falls behind the event buffer gets a new `snapshot`. The browser sends the last event ID when it opens the stream again, and the stream continues from there.
+`GET /v1/state` and the long poll `GET /v1/events` stay for commands and tests.
 Each event has `seq`, `type`, `call_id`, and `time`.
 
 | Type | Extra fields | Meaning |
@@ -115,10 +119,10 @@ Each event has `seq`, `type`, `call_id`, and `time`.
 | `user.utterance` | `text`, `turn_id` | A new user message |
 | `agent.connected` | `name` | An agent connected |
 | `agent.disconnected` | None | The agent disconnected |
-| `agent.greeting` | `text` | The app speaks the greeting |
+| `agent.greeting` | `text`, `item_id`, `turn_id`, `name` | The app speaks the greeting |
 | `agent.interrupted` | None | The current speech turn ended |
-| `message.delta` | `turn_id`, `item_id` | Agent text changed in the room snapshot |
-| `message.done` | `turn_id`, `item_id` | An agent message is complete |
+| `message.delta` | `turn_id`, `item_id`, `text`, `kind`, `name` | New agent text. `text` is only the added part. |
+| `message.done` | `turn_id`, `item_id`, `text`, `kind`, `name` | An agent message is complete. `text` is the full message. |
 | `agent.audio` | `turn_id`, `audio_id` | One speech chunk is ready |
 | `turn.done` | `turn_id` | The agent finished its turn |
 | `managed.state` | None | The session status, the ring, or the approvals changed |
@@ -138,7 +142,8 @@ Each private endpoint needs `Authorization: Bearer TOKEN` or the desktop session
 | --- | --- | --- |
 | GET | `/v1/health` | Public service and speech status |
 | GET | `/v1/state` | Call, speech, and session state |
-| GET | `/v1/events` | Desktop event stream through long polling |
+| GET | `/v1/stream` | Desktop event stream as server-sent events |
+| GET | `/v1/events` | Event stream through long polling |
 | POST | `/v1/attach/start` | Ring from a session, with `thread`, `cwd`, `agent`, `connection`, `greeting`, and `name` |
 | POST | `/v1/attach/accept` | Answer the ring, with an optional `ring_id` |
 | POST | `/v1/attach/decline` | Decline the ring, with an optional `ring_id` |
@@ -149,6 +154,7 @@ Each private endpoint needs `Authorization: Bearer TOKEN` or the desktop session
 | POST | `/v1/call/text` | Send typed or recognized text as a user turn |
 | POST | `/v1/call/audio?call_id=ID` | Send recorded audio as a user turn |
 | POST | `/v1/call/interrupt` | Stop the current reply |
+| POST | `/v1/call/resume` | Open the voice socket again after the computer slept, with `call_id` |
 | POST | `/v1/call/end` | End the call, with `call_id` |
 | POST | `/v1/call/timing` | Record a playback time for a turn |
 | GET | `/v1/call/timings` | Read the saved turn timings. See [call latency](LATENCY.md). |

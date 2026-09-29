@@ -547,7 +547,7 @@ missing one can be named.
 user to stop what they are doing, so they get to decide: the pill shows a bell, who
 is calling, and an answer and a decline, and the agent's greeting is heard only once
 they answer. The name is passed with `--name` and falls back to the project folder.
-An ignored ring stops on its own after forty five seconds rather than leaving the
+An ignored ring stops on its own after 30 seconds rather than leaving the
 session attached, and the surface sends the ring's identifier back when it answers,
 so a reply that arrives after a ring ended cannot answer the next one.
 
