@@ -388,7 +388,9 @@ def test_a_packaged_command_asks_spotlight_when_the_app_is_elsewhere(tmp_path):
     script = agents.command_script(
         f"/old/TalkToMe.app/{agents.SERVER_IN_APP}", apps=(str(tmp_path / "gone.app"),)
     )
-    result = run_shim(script, tmp_path, spotlight=f"{translocated}\n{moved}\n")
+    # A mounted disk image is never used either, because it goes away on eject.
+    spotlight = f"/Volumes/TalkToMe 0.1.0-arm64/TalkToMe.app\n{translocated}\n{moved}\n"
+    result = run_shim(script, tmp_path, spotlight=spotlight)
     assert result.returncode == 0, result.stderr
     assert result.stdout.splitlines()[1] == f'launch open -g -a "{moved}"'
 
@@ -402,15 +404,26 @@ def test_a_packaged_command_says_so_when_the_app_is_gone(tmp_path):
     assert "Move TalkToMe to the Applications folder" in result.stderr
 
 
-def test_a_translocated_app_does_not_write_a_command(tmp_path, safe_command_dirs):
-    # macOS runs an app opened from a disk image from a random folder that is gone
-    # after it quits. A command written from there points at nothing.
-    python = f"/private/var/folders/x/T/AppTranslocation/1234/d/TalkToMe.app/{agents.SERVER_IN_APP}"
+@pytest.mark.parametrize(
+    "app",
+    [
+        # Opened from Downloads: macOS runs a random copy that is gone after it quits.
+        "/private/var/folders/x/T/AppTranslocation/1234/d/TalkToMe.app",
+        # Opened from the disk image: gone after it is ejected. The owner hit this.
+        "/Volumes/TalkToMe 0.1.0-arm64/TalkToMe.app",
+    ],
+)
+def test_an_app_in_a_temporary_place_does_not_write_a_command(tmp_path, safe_command_dirs, app):
     with pytest.raises(ValueError) as error:
-        agents.install_command(tmp_path, python, command_env(safe_command_dirs))
-    assert "Applications folder" in str(error.value)
+        agents.install_command(
+            tmp_path, f"{app}/{agents.SERVER_IN_APP}", command_env(safe_command_dirs)
+        )
+    assert str(error.value) == "Move TalkToMe to Applications first, then install the command."
     local, brew = safe_command_dirs
     assert not (local / "talktome").exists() and not (brew / "talktome").exists()
+
+
+def test_a_checkout_launched_from_a_translocated_path_is_refused(tmp_path, safe_command_dirs):
     with pytest.raises(ValueError):
         agents.install_command(
             tmp_path,
@@ -418,6 +431,13 @@ def test_a_translocated_app_does_not_write_a_command(tmp_path, safe_command_dirs
             command_env(safe_command_dirs),
             launcher='open -g -a "/private/var/folders/x/T/AppTranslocation/1/d/TalkToMe.app"',
         )
+
+
+def test_a_checkout_on_an_external_disk_still_installs(tmp_path, safe_command_dirs):
+    path = agents.install_command(
+        tmp_path, "/Volumes/Code/talktome/.venv/bin/python", command_env(safe_command_dirs)
+    )
+    assert '"/Volumes/Code/talktome/.venv/bin/python"' in path.read_text()
 
 
 def test_a_packaged_app_counts_only_the_command_that_looks_it_up(tmp_path, safe_command_dirs):

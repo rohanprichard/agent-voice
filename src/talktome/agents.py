@@ -183,16 +183,22 @@ def writable(directory: Path) -> bool:
     return os.access(probe, os.W_OK)
 
 
-def translocated(path: str | None) -> bool:
-    # macOS runs an app opened from a disk image or Downloads from a random,
-    # read-only copy that is gone after the app quits.
-    return bool(path) and "/AppTranslocation/" in path
-
-
 def app_bundle(python: str) -> str | None:
     """The .app folder around a frozen server, or None for a checkout."""
     suffix = "/" + SERVER_IN_APP
     return python[: -len(suffix)] if python.endswith(suffix) else None
+
+
+def temporary_copy(python: str, launcher: str | None = None) -> bool:
+    """Whether this app runs from a place that goes away.
+
+    A mounted disk image is gone after it is ejected. macOS runs an app opened
+    from Downloads from a random, read-only copy that is gone after it quits.
+    A checkout on an external disk is left alone, because only a developer has one.
+    """
+    if any("/AppTranslocation/" in (path or "") for path in (python, launcher)):
+        return True
+    return (app_bundle(python) or "").startswith("/Volumes/")
 
 
 def command_script(python: str, launcher: str | None = None, apps=APP_FOLDERS) -> str:
@@ -221,7 +227,7 @@ def command_script(python: str, launcher: str | None = None, apps=APP_FOLDERS) -
         "done",
         'if [ -z "$app" ]; then',
         f"  app=$(mdfind \"kMDItemCFBundleIdentifier == '{APP_ID}'\" 2>/dev/null |",
-        "    grep -v /AppTranslocation/ | while IFS= read -r candidate; do",
+        "    grep -v -e /AppTranslocation/ -e '^/Volumes/' | while IFS= read -r candidate; do",
         '      if [ -x "$candidate/$server" ]; then echo "$candidate"; break; fi',
         "    done)",
         "fi",
@@ -245,11 +251,8 @@ def install_command(
     virtual environment, which no terminal has on its PATH: the two are one feature
     and installing either alone installs nothing.
     """
-    if translocated(python) or translocated(launcher):
-        raise ValueError(
-            "macOS runs this copy of TalkToMe from a temporary folder. Move TalkToMe "
-            "to the Applications folder, open it again, then install the command."
-        )
+    if temporary_copy(python, launcher):
+        raise ValueError("Move TalkToMe to Applications first, then install the command.")
     on_path = command_dirs(path_env if path_env is not None else login_path())
     script = command_script(python, launcher)
     directories = [directory for directory in on_path if writable(directory)]
