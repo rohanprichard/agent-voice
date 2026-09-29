@@ -123,8 +123,13 @@ class SentenceBuffer:
 
 
 class ManagedSession:
-    def __init__(self, room, synthesize, cache_audio, open_stream=None, warm_stream=None):
+    def __init__(
+        self, room, synthesize, cache_audio, open_stream=None, warm_stream=None, speech_problem=None,
+    ):
         self.room = room
+        # Returns a reason when speech cannot work, so a call is refused before it
+        # rings instead of ringing into a call that cannot hear or speak.
+        self.speech_problem = speech_problem
         self.synthesize = synthesize
         self.cache_audio = cache_audio
         self.open_stream = open_stream
@@ -193,6 +198,9 @@ class ManagedSession:
         """
         if not valid_session_id(thread_id, agent):
             raise HTTPException(400, "That session id is not valid.")
+        problem = self.speech_problem() if self.speech_problem else None
+        if problem:
+            raise HTTPException(409, problem)
         async with self.lock:
             directory = self._project(cwd)
             if agent not in {"codex", "claude", "hermes", "openclaw", "generic"}:

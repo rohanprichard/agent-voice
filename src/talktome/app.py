@@ -418,9 +418,26 @@ def create_app(*, token=None, speech=None):
     async def warm_stream():
         return await managed_stream(None)
 
+    def speech_problem():
+        # A model or a remembered key still loading after the app woke up is
+        # not a missing setup. The user answers after it is ready.
+        if any(task is not None and not task.done() for task in (setup_task, voice_setup_task)):
+            return None
+        status = engine.status()
+        loading = {"downloading", "loading"}
+        hearing = status.get("status") == "ready" or status.get("status") in loading
+        speaking = status.get("tts_available") or (
+            status.get("tts_provider") == "kokoro"
+            and (status.get("kokoro") or {}).get("status") in loading
+        )
+        if hearing and speaking:
+            return None
+        return "TalkToMe speech is not set up. Ask the user to finish setup in TalkToMe."
+
     managed = ManagedSession(
         room, managed_speech, cache_audio, managed_stream,
         warm_stream=warm_stream if isinstance(engine, Speech) else None,
+        speech_problem=speech_problem,
     )
     app.state.managed = managed
     # Opt-in only: without a private laptop configuration this is None, and local

@@ -195,6 +195,34 @@ def test_not_waiting_is_honoured_at_the_far_end(app):
     assert "answered" not in reply["result"]
 
 
+def test_a_call_is_refused_before_it_rings_when_speech_is_not_set_up(tmp_path):
+    speech = FakeSpeech()
+    speech.state = {"status": "needs_model", "progress": 0}
+    app = create_app(token="test-token", speech=speech)
+    with TestClient(app):
+        reply = wait_for_reply(inbox.ask("call", {"thread": "t-1", "cwd": str(tmp_path)}))
+        assert app.state.managed.ring is None
+
+    assert reply["ok"] is False
+    assert reply["error"] == "TalkToMe speech is not set up. Ask the user to finish setup in TalkToMe."
+
+
+def test_a_call_rings_while_the_speech_model_loads(tmp_path, monkeypatch):
+    from test_managed import AttachAdapter
+
+    monkeypatch.setattr("talktome.managed.AttachedAdapter", AttachAdapter)
+    monkeypatch.setattr("talktome.managed.session_name", lambda thread: None)
+    speech = FakeSpeech()
+    speech.state = {"status": "loading", "progress": 90}
+    app = create_app(token="test-token", speech=speech)
+    with TestClient(app):
+        reply = wait_for_reply(
+            inbox.ask("call", {"thread": "t-1", "cwd": str(tmp_path), "wait": False})
+        )
+
+    assert reply["result"]["status"] == "ringing"
+
+
 def test_a_refusal_travels_back_as_a_reason_the_agent_can_repeat(app):
     async def attach(thread, cwd, greeting=None, name=None, agent="codex", connection="auto"):
         raise HTTPException(409, "That session has no transcript yet.")

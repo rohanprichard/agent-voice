@@ -244,6 +244,7 @@ Report an error in one sentence. Do not retry a failed call repeatedly.
 
 - If `talktome` is missing, ask the user to install the command from TalkToMe Settings.
 - If the app is closed and cannot start, ask the user to open it.
+- If TalkToMe says speech is not set up, ask the user to finish setup in TalkToMe. Do not call again until they do.
 - If Codex has no transcript yet, exchange one terminal message before the next call.
 - If an API host lacks a required feature, use cooperative mode or retain text conversation.
 - If a reply names a cancelled turn, discard that reply and listen for the current turn.

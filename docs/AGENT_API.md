@@ -38,6 +38,7 @@ Add `--no-wait` to return as soon as the ring starts.
 A Codex session ID must match `[A-Za-z0-9][A-Za-z0-9._:-]*`, because it goes into a file search.
 Other agents can use any printable ID with no spaces, up to 512 characters.
 The app refuses a ring while another call or ring is live.
+The app also refuses a ring when speech is not set up: no speech model, no key for ElevenLabs input, or no voice. The command then prints "TalkToMe speech is not set up. Ask the user to finish setup in TalkToMe."
 
 ## Connection methods
 
