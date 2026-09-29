@@ -91,6 +91,9 @@
                 <button id="allow-microphone" class="secondary-button">
                   Allow microphone
                 </button>
+                <button id="open-microphone-settings" class="secondary-button hidden">
+                  Open Microphone settings
+                </button>
               </div>
             </section>
             <div class="settings-side-column">
@@ -148,6 +151,17 @@
                 <button type="button" role="radio" data-color="cyan" aria-label="Cyan" aria-checked="false"></button>
               </div>
               </div>
+            </section>
+            <section class="settings-card">
+              <h2>Startup</h2>
+              <label class="checkbox-label"
+                ><input id="login-item" type="checkbox" /> Open TalkToMe at
+                login, so your agent can call you.</label
+              >
+              <p id="login-item-status" class="settings-note" role="status"></p>
+              <button id="open-login-items" class="secondary-button hidden">
+                Open Login Items
+              </button>
             </section>
             </div>
             <section
@@ -237,8 +251,19 @@
               </div>
               <p>
                 Install the skill and the <code>talktome</code> command. Your agent can then call you.
+                The skill goes to Codex, and to Claude Code, Hermes, and OpenClaw when they are on this Mac.
               </p>
               <div id="agent-list" class="agent-list"></div>
+              <div id="admin-install" class="admin-install hidden">
+                <p class="settings-note">
+                  Your shell only searches <code>/usr/local/bin</code>, and that folder
+                  needs an administrator. Install for all users puts the
+                  <code>talktome</code> command there. macOS asks for your password first.
+                </p>
+                <button id="install-all-users" class="secondary-button">
+                  Install for all users
+                </button>
+              </div>
             </section>
           </div>
         </section>

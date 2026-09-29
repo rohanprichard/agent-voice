@@ -6,6 +6,7 @@ for the desktop shell and for people debugging a setup.
 """
 
 import argparse
+import importlib.util
 import json
 import os
 import shlex
@@ -368,6 +369,14 @@ def main():
             raise SystemExit(1) from None
         print(json.dumps(result, indent=2))
     else:
+        # A remote server installs only the core, and that install has no voice.
+        if importlib.util.find_spec("faster_whisper") is None:
+            print(
+                "The voice server needs the speech extra. "
+                "Install talktome-local[speech], or use the TalkToMe app.",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
         # TALKTOME_RELOAD=1 restarts the server when a Python file changes, so a
         # backend edit does not need a full app restart. Development only.
         import uvicorn

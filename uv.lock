@@ -1078,14 +1078,18 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
-    { name = "faster-whisper" },
     { name = "httpx" },
-    { name = "huggingface-hub" },
-    { name = "keyring" },
-    { name = "kokoro-onnx" },
     { name = "platformdirs" },
     { name = "uvicorn" },
     { name = "websockets" },
+]
+
+[package.optional-dependencies]
+speech = [
+    { name = "faster-whisper" },
+    { name = "huggingface-hub" },
+    { name = "keyring" },
+    { name = "kokoro-onnx" },
 ]
 
 [package.dev-dependencies]
@@ -1094,20 +1098,22 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
+    { name = "talktome-local", extra = ["speech"] },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115,<1" },
-    { name = "faster-whisper", specifier = ">=1.2,<2" },
+    { name = "faster-whisper", marker = "extra == 'speech'", specifier = ">=1.2,<2" },
     { name = "httpx", specifier = ">=0.28,<1" },
-    { name = "huggingface-hub", specifier = ">=0.28,<1" },
-    { name = "keyring", specifier = ">=25,<26" },
-    { name = "kokoro-onnx", specifier = ">=0.4.9,<0.7" },
+    { name = "huggingface-hub", marker = "extra == 'speech'", specifier = ">=0.28,<1" },
+    { name = "keyring", marker = "extra == 'speech'", specifier = ">=25,<26" },
+    { name = "kokoro-onnx", marker = "extra == 'speech'", specifier = ">=0.4.9,<0.7" },
     { name = "platformdirs", specifier = ">=4,<5" },
     { name = "uvicorn", specifier = ">=0.34,<1" },
     { name = "websockets", specifier = ">=13,<16" },
 ]
+provides-extras = ["speech"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1115,6 +1121,7 @@ dev = [
     { name = "pytest", specifier = ">=8,<10" },
     { name = "pytest-asyncio", specifier = ">=1,<2" },
     { name = "ruff", specifier = ">=0.12,<1" },
+    { name = "talktome-local", extras = ["speech"] },
 ]
 
 [[package]]

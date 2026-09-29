@@ -18,8 +18,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # The dev group includes the speech extra, so this installs the full server.
       - run: uv sync --frozen
       - run: uv run ruff check
       - run: uv run pytest -q
       # The Node tests use only built-in modules, so npm ci is not needed.
       - run: node --test tests/*.test.mjs
+      # A remote server installs the package without the speech extra.
+      - name: Core install runs without the speech stack
+        run: |
+          uv venv "$RUNNER_TEMP/core"
+          uv pip install --python "$RUNNER_TEMP/core/bin/python" .
+          "$RUNNER_TEMP/core/bin/talktome" --help > /dev/null
+          TALKTOME_DATA_DIR="$RUNNER_TEMP/core-data" "$RUNNER_TEMP/core/bin/talktome" remote-status

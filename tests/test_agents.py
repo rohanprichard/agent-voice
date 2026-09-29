@@ -1,4 +1,6 @@
 import os
+import shlex
+import subprocess
 
 import pytest
 
@@ -322,3 +324,191 @@ def test_nowhere_to_go_explains_what_to_add(tmp_path, monkeypatch, safe_command_
         agents.install_command(tmp_path, "/usr/bin/python3")
     assert "export PATH=" in str(error.value)
     assert ".zshrc" in str(error.value)
+
+
+# ------------------------------------------------- the command in a packaged app
+
+
+def fake_app(root, name="TalkToMe.app"):
+    """An app folder whose server only reports how it was run."""
+    app = root / name
+    server = app / agents.SERVER_IN_APP
+    server.parent.mkdir(parents=True)
+    server.write_text('#!/bin/sh\necho "server $*"\necho "launch $TALKTOME_LAUNCH"\n')
+    server.chmod(0o755)
+    return app
+
+
+def run_shim(script, tmp_path, spotlight=""):
+    # A stub mdfind comes first on PATH, so no test asks the real Spotlight and
+    # finds the real app.
+    stubs = tmp_path / "stubs"
+    stubs.mkdir(exist_ok=True)
+    mdfind = stubs / "mdfind"
+    mdfind.write_text(f"#!/bin/sh\nprintf '%s' {shlex.quote(spotlight)}\n")
+    mdfind.chmod(0o755)
+    shim = tmp_path / "shim"
+    shim.write_text(script)
+    shim.chmod(0o755)
+    return subprocess.run(
+        [str(shim), "call", "--agent", "claude"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={"PATH": f"{stubs}:/usr/bin:/bin", "HOME": str(tmp_path / "home")},
+        timeout=10,
+    )
+
+
+def test_a_packaged_command_does_not_hold_the_path_of_the_app(tmp_path, safe_command_dirs):
+    # The path at install time breaks when the user moves the app.
+    python = f"/Users/x/Downloads/TalkToMe.app/{agents.SERVER_IN_APP}"
+    path = agents.install_command(tmp_path, python, command_env(safe_command_dirs))
+    text = path.read_text()
+    assert "Downloads" not in text
+    assert agents.APP_ID in text
+    assert '"/Applications/TalkToMe.app" "$HOME/Applications/TalkToMe.app"' in text
+    assert agents.is_our_command(path)
+
+
+def test_a_packaged_command_finds_the_app_where_it_is_now(tmp_path):
+    app = fake_app(tmp_path / "Applications")
+    script = agents.command_script(f"/old/TalkToMe.app/{agents.SERVER_IN_APP}", apps=(str(app),))
+    result = run_shim(script, tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == [
+        "server -m talktome call --agent claude",
+        f'launch open -g -a "{app}"',
+    ]
+
+
+def test_a_packaged_command_asks_spotlight_when_the_app_is_elsewhere(tmp_path):
+    moved = fake_app(tmp_path / "Somewhere else")
+    translocated = fake_app(tmp_path / "AppTranslocation" / "ABC")
+    script = agents.command_script(
+        f"/old/TalkToMe.app/{agents.SERVER_IN_APP}", apps=(str(tmp_path / "gone.app"),)
+    )
+    # A mounted disk image is never used either, because it goes away on eject.
+    spotlight = f"/Volumes/TalkToMe 0.1.0-arm64/TalkToMe.app\n{translocated}\n{moved}\n"
+    result = run_shim(script, tmp_path, spotlight=spotlight)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines()[1] == f'launch open -g -a "{moved}"'
+
+
+def test_a_packaged_command_says_so_when_the_app_is_gone(tmp_path):
+    script = agents.command_script(
+        f"/old/TalkToMe.app/{agents.SERVER_IN_APP}", apps=(str(tmp_path / "gone.app"),)
+    )
+    result = run_shim(script, tmp_path)
+    assert result.returncode == 1
+    assert "Move TalkToMe to the Applications folder" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "app",
+    [
+        # Opened from Downloads: macOS runs a random copy that is gone after it quits.
+        "/private/var/folders/x/T/AppTranslocation/1234/d/TalkToMe.app",
+        # Opened from the disk image: gone after it is ejected. The owner hit this.
+        "/Volumes/TalkToMe 0.1.0-arm64/TalkToMe.app",
+    ],
+)
+def test_an_app_in_a_temporary_place_does_not_write_a_command(tmp_path, safe_command_dirs, app):
+    with pytest.raises(ValueError) as error:
+        agents.install_command(
+            tmp_path, f"{app}/{agents.SERVER_IN_APP}", command_env(safe_command_dirs)
+        )
+    assert str(error.value) == "Move TalkToMe to Applications first, then install the command."
+    local, brew = safe_command_dirs
+    assert not (local / "talktome").exists() and not (brew / "talktome").exists()
+
+
+def test_a_checkout_launched_from_a_translocated_path_is_refused(tmp_path, safe_command_dirs):
+    with pytest.raises(ValueError):
+        agents.install_command(
+            tmp_path,
+            "/app/.venv/bin/python",
+            command_env(safe_command_dirs),
+            launcher='open -g -a "/private/var/folders/x/T/AppTranslocation/1/d/TalkToMe.app"',
+        )
+
+
+def test_a_checkout_on_an_external_disk_still_installs(tmp_path, safe_command_dirs):
+    path = agents.install_command(
+        tmp_path, "/Volumes/Code/talktome/.venv/bin/python", command_env(safe_command_dirs)
+    )
+    assert '"/Volumes/Code/talktome/.venv/bin/python"' in path.read_text()
+
+
+def test_a_packaged_app_counts_only_the_command_that_looks_it_up(tmp_path, safe_command_dirs):
+    path_env = command_env(safe_command_dirs)
+    python = f"/Applications/TalkToMe.app/{agents.SERVER_IN_APP}"
+    path = agents.install_command(tmp_path, python, path_env)
+    assert agents.command_installed(tmp_path, python, path_env) is True
+    # A copy of the app somewhere else is served by the same command.
+    other = f"/Users/x/Applications/TalkToMe.app/{agents.SERVER_IN_APP}"
+    assert agents.command_installed(tmp_path, other, path_env) is True
+    # The older form held one copy's path, and it is offered again.
+    path.write_text(f'#!/bin/sh\n# Written by TalkToMe\nexec "{python}" -m talktome "$@"\n')
+    assert agents.command_installed(tmp_path, python, path_env) is False
+
+
+def test_a_checkout_keeps_its_own_interpreter(tmp_path, safe_command_dirs):
+    path_env = command_env(safe_command_dirs)
+    path = agents.install_command(
+        tmp_path, "/repo/.venv/bin/python", path_env, launcher='"/e/Electron" "/repo"'
+    )
+    text = path.read_text()
+    assert 'exec "/repo/.venv/bin/python" -m talktome "$@"' in text
+    assert "export TALKTOME_LAUNCH='\"/e/Electron\" \"/repo\"'" in text
+    assert "mdfind" not in text
+
+
+def test_a_system_folder_is_left_for_the_administrator_prompt(
+    tmp_path, monkeypatch, safe_command_dirs, isolated_data_dir
+):
+    # A Mac without Homebrew has /usr/local/bin on PATH, owned by root. The
+    # script is staged for the desktop app to copy after an administrator prompt.
+    local = tmp_path / "bin" / "local"
+    system = tmp_path / "bin" / "system"
+    system.mkdir(parents=True)
+    system.chmod(0o555)
+    monkeypatch.setattr(agents, "COMMAND_DIRS", (str(local), str(system)))
+    monkeypatch.setattr(agents, "SYSTEM_COMMAND_DIR", str(system))
+    try:
+        assert agents.needs_admin(f"{system}:/usr/bin") is True
+        with pytest.raises(ValueError) as error:
+            agents.install_command(tmp_path, "/repo/.venv/bin/python", f"{system}:/usr/bin")
+        assert "Install for all users" in str(error.value)
+        staged = isolated_data_dir / agents.STAGED_COMMAND
+        assert staged.read_text() == agents.command_script("/repo/.venv/bin/python")
+        assert not (system / "talktome").exists()
+        # A user folder on PATH is used before any administrator prompt.
+        path_env = f"{local}:{system}"
+        assert agents.needs_admin(path_env) is False
+        assert agents.install_command(tmp_path, "/repo/.venv/bin/python", path_env).parent == local
+    finally:
+        system.chmod(0o755)
+
+
+def test_the_skill_goes_to_claude_code_when_it_is_there(tmp_path, monkeypatch):
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    assert "claude" not in agents.skill_targets(tmp_path)
+    (tmp_path / ".claude").mkdir()
+    target = tmp_path / ".claude" / "skills" / "talktome" / "SKILL.md"
+    assert agents.skill_targets(tmp_path)["claude"] == target
+    report = agents.install_skill(tmp_path)
+    assert target.read_text() == agents.skill_source().read_text()
+    assert {"id": "claude", "path": str(target), "skill": True} in report["hosts"]
+    agents.uninstall_skill(tmp_path)
+    assert not target.parent.exists()
+    assert not agents.skill_target(tmp_path).exists()
+    assert (tmp_path / ".claude").is_dir()
+
+
+def test_the_skill_gives_claude_code_a_cooperative_call():
+    # Claude Code has no terminal adapter, so its call must be cooperative. The
+    # server makes `--agent claude` cooperative without the flag.
+    text = agents.skill_source().read_text()
+    assert "talktome call --agent claude --thread SESSION_ID" in text
+    assert "| Claude Code | Cooperative commands in this session |" in text

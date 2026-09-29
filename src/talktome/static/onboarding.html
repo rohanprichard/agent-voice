@@ -53,6 +53,7 @@
           <p class="status-line" id="microphone-status" role="status">Checking access…</p>
           <div class="step-actions">
             <button class="primary-button" id="microphone-next" type="button">Allow microphone</button>
+            <button class="ghost-button" id="microphone-settings" type="button" hidden>Open Microphone settings</button>
             <button class="ghost-button" id="microphone-skip" type="button">Later</button>
           </div>
         </section>
@@ -61,6 +62,7 @@
           <div class="feature-art voice-art" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
           <h1>Speech</h1>
           <p class="step-copy">Add an ElevenLabs API key for speech. You can use local speech in Settings instead.</p>
+          <p class="status-line" id="local-speech-size"></p>
           <form id="voice-form">
             <label class="field-label" for="voice-key">ElevenLabs API key</label>
             <div class="key-field">
@@ -88,6 +90,7 @@
           </div>
           <h1>Agent connection</h1>
           <p class="step-copy">Install the skill so your agent can call you.</p>
+          <p class="status-line" id="agent-hosts">The skill goes to Codex, and to Claude Code, Hermes, and OpenClaw when they are on this Mac.</p>
           <p class="status-line" id="agent-status" role="status">Checking the connection…</p>
           <div class="step-actions">
             <button class="primary-button" id="agent-install" type="button">Install</button>
@@ -119,6 +122,9 @@
           <h1 id="ready-title">Ask your agent to call.</h1>
           <p class="step-copy" id="ready-copy">Say “Call me with TalkToMe.”</p>
           <div class="ready-checks" id="ready-checks" role="status"></div>
+          <label class="remember-label"><input id="login-item" type="checkbox" checked /> Open TalkToMe at login, so your agent can call you.</label>
+          <p class="status-line" id="login-item-status" role="status"></p>
+          <button class="ghost-button" id="login-item-settings" type="button" hidden>Open Login Items</button>
           <p class="status-line" id="finish-status" role="status" hidden></p>
           <div class="step-actions">
             <button class="primary-button" id="finish-setup" type="button">Finish setup</button>

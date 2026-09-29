@@ -21,13 +21,41 @@ The menu-bar icon opens Settings and gives controls to answer, decline, mute, an
 
 ## Requirements
 
-- macOS. The app received tests only on macOS. The disk image is for Apple silicon (arm64).
-- Node.js 22 or later, for a build from source.
-- [uv](https://docs.astral.sh/uv/getting-started/installation/). uv installs Python 3.11 to 3.13 when necessary.
-- Xcode command-line tools, to build the disk image. The build compiles a small Swift helper.
+- A Mac with Apple silicon (arm64) and macOS 14 Sonoma or later.
 - One agent host: Codex, Claude Code, Hermes Agent, OpenClaw, or another host that can run shell commands.
 
-## Install and start
+## Install
+
+### Disk image
+
+1. Download `TalkToMe-<version>-arm64.dmg` from [Releases](https://github.com/rohanprichard/talktome/releases).
+2. Open the disk image and drag TalkToMe to Applications.
+3. Open TalkToMe. macOS tells you that it cannot verify the app. Close the message.
+4. Open **System Settings > Privacy & Security**. Below the message about TalkToMe, select **Open Anyway**.
+5. Open TalkToMe again, then select **Open Anyway**. macOS can ask for your password.
+
+You do steps 3 to 5 only once.
+On macOS 15 Sequoia and later, Control-click and **Open** does not skip this check.
+To skip the check from Terminal, run `xattr -dr com.apple.quarantine /Applications/TalkToMe.app`.
+
+macOS asks for these steps because the app is not notarized.
+Notarization needs a paid Apple Developer ID.
+The app has an ad-hoc signature. The signature lets macOS find a change to the app files.
+
+### Homebrew (coming soon)
+
+This command works after the tap `rohanprichard/tap` exists:
+
+```sh
+brew install --cask rohanprichard/tap/talktome
+```
+
+The first start needs the same **Open Anyway** step as the disk image.
+
+### Build from source
+
+You need Node.js 22 or later, [uv](https://docs.astral.sh/uv/getting-started/installation/), and the Xcode command-line tools.
+uv installs Python 3.11 to 3.13 when necessary.
 
 ```sh
 git clone https://github.com/rohanprichard/talktome.git
@@ -38,6 +66,16 @@ npm start
 ```
 
 `npm start` runs `uv sync --frozen` if the Python environment is missing. Then it starts Electron.
+To build the disk image, see [Build the disk image](#build-the-disk-image).
+
+### Server install for remote calls
+
+An agent on another server can ring the app through the [remote bridge](#remote-bridge-experimental).
+On that server, install only the command. It has no speech libraries:
+
+```sh
+uv tool install "talktome-local @ git+https://github.com/rohanprichard/talktome"
+```
 
 ## First-run setup
 
@@ -92,7 +130,7 @@ The remote bridge lets an agent on another server ring the laptop.
 Only text and call events cross the bridge. Microphone audio stays on the laptop.
 The setup uses SSH:
 
-1. Install talktome on the server: `uv tool install git+https://github.com/rohanprichard/talktome`.
+1. Install talktome on the server: `uv tool install "talktome-local @ git+https://github.com/rohanprichard/talktome"`.
 2. On the laptop, run `talktome remote-connect user@server --install-service`.
 3. Restart TalkToMe.
 
@@ -164,12 +202,13 @@ npm run build:app
 ```
 
 This command freezes the Python server into one binary, draws the icon, compiles the notch helper, and runs electron-builder.
-The result is `dist/app/TalkToMe-<version>-arm64.dmg`.
-The script mounts the disk image after the build and examines its contents.
+The result is `dist/app/TalkToMe-<version>-arm64.dmg` and a zip of the app for the updater.
+The script mounts the disk image after the build and examines its contents and its signature.
 To reuse the last frozen server when only the desktop code changed, run `npm run build:dmg`.
 
 To install the app, open the disk image and drag TalkToMe to Applications.
-The build is not signed. It opens on the Mac that built it. Other Macs block it, because notarization needs a paid Apple Developer ID.
+The build has an ad-hoc signature. It opens on the Mac that built it without a prompt.
+On another Mac, it needs the **Open Anyway** step from [Disk image](#disk-image).
 The bundle does not include the speech models. The app downloads them at first use.
 
 ## Development
@@ -183,6 +222,7 @@ uv run ruff check       # Python lint
 node --test tests/      # JavaScript tests
 ```
 
+The `dev` group includes the `speech` extra, so `uv sync --frozen` installs the full voice server.
 `npm test` runs the Python tests and the JavaScript tests together.
 These commands start the real app for end-to-end checks:
 

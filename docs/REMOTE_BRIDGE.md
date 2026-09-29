@@ -75,13 +75,13 @@ You need an SSH login from the laptop to the server.
 Install [uv](https://docs.astral.sh/uv/), then install the `talktome` command:
 
 ```sh
-uv tool install git+https://github.com/rohanprichard/talktome
+uv tool install "talktome-local @ git+https://github.com/rohanprichard/talktome"
 ```
 
 This installs the package's console scripts, which include `talktome`. uv puts
-them in `~/.local/bin`. The package also includes the speech libraries, so the
-install is large. To install from a checkout instead, run
-`uv tool install /path/to/talktome`.
+them in `~/.local/bin`. The install has no speech libraries, because the server
+never handles audio. It needs about 15 MB. To install from a checkout instead,
+run `uv tool install /path/to/talktome`.
 
 ### 2. Pair from the laptop
 

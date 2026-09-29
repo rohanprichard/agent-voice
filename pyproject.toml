@@ -10,16 +10,22 @@ readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Rohan Richard" }]
 requires-python = ">=3.11,<3.14"
+# The core is what a remote server needs: the command, the relay, and the daemon.
+# The desktop app's voice server also needs the speech extra.
 dependencies = [
   "fastapi>=0.115,<1",
   "uvicorn>=0.34,<1",
   "httpx>=0.28,<1",
+  "platformdirs>=4,<5",
+  "websockets>=13,<16",
+]
+
+[project.optional-dependencies]
+speech = [
   "faster-whisper>=1.2,<2",
   "huggingface-hub>=0.28,<1",
-  "platformdirs>=4,<5",
   "kokoro-onnx>=0.4.9,<0.7",
   "keyring>=25,<26",
-  "websockets>=13,<16",
 ]
 
 [project.urls]
@@ -33,6 +39,7 @@ talktome-remote = "talktome.remote.daemon:main"
 
 [dependency-groups]
 dev = [
+    "talktome-local[speech]",
     "pyinstaller>=6.22.3",
     "pytest>=8,<10",
     "pytest-asyncio>=1,<2",
@@ -44,6 +51,10 @@ packages = ["src/talktome"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "skills/talktome/SKILL.md" = "talktome/skills/talktome/SKILL.md"
+
+# The rest of the repository is the desktop app, which has no place in the package.
+[tool.hatch.build.targets.sdist]
+include = ["/src/talktome", "/skills/talktome", "/tests", "/LICENSE", "/NOTICE", "/README.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

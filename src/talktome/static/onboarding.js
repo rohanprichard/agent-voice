@@ -1,4 +1,4 @@
-import { resumeStep, setupSteps } from "./onboarding-steps.js";
+import { agentNames, listText, localSpeechNotice, resumeStep, setupSteps } from "./onboarding-steps.js";
 
 const $ = (id) => document.getElementById(id);
 const colors = ["amber", "blue", "violet", "green", "pink", "cyan"];
@@ -12,6 +12,7 @@ let speechReady = false;
 let speechName = "Speech";
 let agentReady = false;
 let busy = false;
+let loginItem = { available: false, enabled: false, needsApproval: false };
 let color = localStorage.getItem("talktome-notch-glow") || "amber";
 if (!colors.includes(color)) color = "amber";
 
@@ -64,10 +65,18 @@ function render() {
   }));
   $("microphone-next").textContent = microphone === "granted" ? "Continue" : "Allow microphone";
   $("microphone-skip").hidden = microphone === "granted";
+  $("microphone-settings").hidden = microphone !== "denied";
   $("voice-save").textContent = voiceReady ? "Continue" : busy ? "Connecting…" : "Connect";
   $("agent-install").textContent = agentReady ? "Continue" : busy ? "Installing…" : "Install";
   $("voice-save").disabled = busy;
   $("agent-install").disabled = busy;
+  $("login-item").disabled = !loginItem.available;
+  $("login-item-settings").hidden = !loginItem.needsApproval;
+  setStatus("login-item-status", !loginItem.available
+    ? "Open at login works in the installed app."
+    : loginItem.needsApproval
+      ? "Allow TalkToMe in System Settings → General → Login Items."
+      : "");
   renderReady();
 }
 
@@ -101,12 +110,15 @@ async function post(path, body) {
 async function readStatus() {
   try {
     microphone = await window.talktomeSetup?.microphoneStatus?.() || "unknown";
-    setStatus("microphone-status", microphone === "granted" ? "Access on" : microphone === "denied" ? "Access off in macOS Settings" : "Access off");
+    setStatus("microphone-status", microphone === "granted" ? "Access on" : microphone === "denied" ? "Access is off. Turn on TalkToMe in System Settings." : "Access off");
   } catch {
     setStatus("microphone-status", "Access off");
   }
   try {
     const [models, skill] = await Promise.all([api("/models"), api("/skill")]);
+    $("local-speech-size").textContent = localSpeechNotice(models.models, models.speech?.kokoro?.total_bytes);
+    const hosts = agentNames(skill.hosts);
+    if (hosts.length) $("agent-hosts").textContent = `The skill goes to ${listText(hosts)}.`;
     voiceReady = Boolean(models.speech?.elevenlabs?.configured);
     speechReady = models.speech?.status === "ready" && Boolean(models.speech?.tts_available);
     speechName = models.speech?.stt_provider === "elevenlabs" ? "ElevenLabs" : "Local speech";
@@ -129,13 +141,17 @@ $("microphone-next").addEventListener("click", async () => {
   if (microphone === "granted") return next();
   try {
     microphone = await window.talktomeSetup?.requestMicrophone?.() || "unknown";
-    setStatus("microphone-status", microphone === "granted" ? "Access on" : "Allow access in macOS Settings", microphone !== "granted");
+    setStatus("microphone-status", microphone === "granted" ? "Access on" : "Access is off. Turn on TalkToMe in System Settings.", microphone !== "granted");
     render();
   } catch (error) {
     setStatus("microphone-status", error.message, true);
   }
 });
 $("microphone-skip").addEventListener("click", next);
+$("microphone-settings").addEventListener("click", () =>
+  window.talktomeSetup?.openSystemSettings?.("microphone")?.catch?.(() => {}));
+$("login-item-settings").addEventListener("click", () =>
+  window.talktomeSetup?.openSystemSettings?.("login-items")?.catch?.(() => {}));
 $("key-visibility").addEventListener("click", () => {
   const input = $("voice-key");
   input.type = input.type === "password" ? "text" : "password";
@@ -188,9 +204,22 @@ $("agent-skip").addEventListener("click", next);
 for (const button of $("color-list").querySelectorAll("button"))
   button.addEventListener("click", () => setColor(button.dataset.color));
 $("color-next").addEventListener("click", next);
+// The login item is set at the end, so a user who leaves setup early has not
+// agreed to it. When macOS wants approval, the first click shows how to give it.
+let approvalShown = false;
 $("finish-setup").addEventListener("click", async () => {
   $("finish-setup").disabled = true;
   try {
+    if (loginItem.available && !approvalShown) {
+      loginItem = await window.talktomeSetup.setLoginItem($("login-item").checked);
+      if (loginItem.needsApproval) {
+        approvalShown = true;
+        $("finish-setup").textContent = "Done";
+        $("finish-setup").disabled = false;
+        render();
+        return;
+      }
+    }
     await window.talktomeSetup?.complete?.();
     localStorage.removeItem("talktome-setup-step");
   } catch (error) {
@@ -205,6 +234,10 @@ document.addEventListener("keydown", (event) => {
 
 setColor(color);
 render();
+window.talktomeSetup?.loginItem?.()?.then((state) => {
+  loginItem = state;
+  render();
+})?.catch(() => {});
 window.talktomeSetup?.info?.()?.then((info) => {
   nativeNotch = Boolean(info?.nativeNotch);
   steps = setupSteps(nativeNotch);

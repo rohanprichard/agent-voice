@@ -10,9 +10,18 @@ const {
   nativeImage,
   nativeTheme,
   screen,
+  shell,
 } = require("electron");
-const { spawn, spawnSync } = require("node:child_process");
-const { readFileSync, mkdirSync, existsSync } = require("node:fs");
+const { execFile, spawn, spawnSync } = require("node:child_process");
+const {
+  readFileSync,
+  mkdirSync,
+  mkdtempSync,
+  existsSync,
+  rmSync,
+  writeFileSync,
+} = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const {
   TRANSCRIPT_HEIGHT,
@@ -22,6 +31,13 @@ const {
   transcriptBounds,
 } = require("./geometry.cjs");
 const { computeVisibility } = require("./lifecycle.cjs");
+const {
+  SETTINGS_PANES,
+  adminInstallArgs,
+  loginItemState,
+  shouldOfferMove,
+  validCommandScript,
+} = require("./install.cjs");
 
 app.setName("talktome");
 if (process.env.TALKTOME_DATA_DIR) {
@@ -541,8 +557,97 @@ function refreshTrayMenu() {
   );
 }
 
+function dataDirectory() {
+  return process.env.TALKTOME_DATA_DIR || app.getPath("userData");
+}
+
+/**
+ * Offer to move a packaged app into the Applications folder.
+ *
+ * Returns true when the app moves, because Electron then starts the moved copy
+ * and quits this one. A "no" is remembered, so the question comes only once.
+ */
+async function offerMoveToApplications() {
+  const declined = path.join(dataDirectory(), "move-to-applications-declined");
+  if (!shouldOfferMove({
+    packaged: app.isPackaged,
+    platform: process.platform,
+    inApplications: process.platform === "darwin" && app.isInApplicationsFolder(),
+    declined: existsSync(declined),
+  })) return false;
+  // The app has no Dock icon, so the dialog would open behind other windows.
+  app.focus({ steal: true });
+  const { response } = await dialog.showMessageBox({
+    type: "question",
+    buttons: ["Move to Applications", "Do Not Move"],
+    defaultId: 0,
+    cancelId: 1,
+    message: "Move TalkToMe to the Applications folder?",
+    detail: "Your agent finds TalkToMe there, and TalkToMe can open at login. If you do not move it, TalkToMe does not ask again.",
+  });
+  if (response !== 0) {
+    mkdirSync(path.dirname(declined), { recursive: true, mode: 0o700 });
+    writeFileSync(declined, "");
+    return false;
+  }
+  try {
+    return app.moveToApplicationsFolder({
+      conflictHandler: (type) => {
+        // Electron then brings the running copy forward and quits this one.
+        if (type === "existsAndRunning") return true;
+        return dialog.showMessageBoxSync({
+          type: "question",
+          buttons: ["Replace", "Cancel"],
+          defaultId: 0,
+          cancelId: 1,
+          message: "The Applications folder already has a copy of TalkToMe.",
+          detail: "Replace it with this copy? The older copy goes to the Trash.",
+        }) === 0;
+      },
+    });
+  } catch (error) {
+    dialog.showErrorBox("TalkToMe could not move", error.message);
+    return false;
+  }
+}
+
+function loginItem() {
+  return loginItemState({
+    packaged: app.isPackaged,
+    platform: process.platform,
+    settings: app.isPackaged && process.platform === "darwin" ? app.getLoginItemSettings() : null,
+  });
+}
+
+// agents.py stages the script when /usr/local/bin is the only folder for it.
+// A fresh private copy is installed, so the file cannot change after the check.
+async function installCommandForAllUsers() {
+  let text;
+  try {
+    text = readFileSync(path.join(dataDirectory(), "talktome-command"), "utf8");
+  } catch {
+    throw new Error("Choose Install first, then Install for all users.");
+  }
+  if (!validCommandScript(text)) throw new Error("The staged talktome command is not valid.");
+  const folder = mkdtempSync(path.join(os.tmpdir(), "talktome-"));
+  const source = path.join(folder, "talktome");
+  writeFileSync(source, text, { mode: 0o644 });
+  try {
+    await new Promise((resolve, reject) => {
+      execFile("/usr/bin/osascript", adminInstallArgs(source), (error, _stdout, stderr) => {
+        if (!error) return resolve();
+        // -128 is the Cancel button in the administrator prompt.
+        reject(new Error(/-128/.test(stderr) ? "You cancelled the install." : stderr.trim() || error.message));
+      });
+    });
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+  return true;
+}
+
 async function launchBackend() {
-  const directory = process.env.TALKTOME_DATA_DIR || app.getPath("userData");
+  const directory = dataDirectory();
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   // A packaged app has no checkout and no virtual environment: the server ships
   // inside the bundle as the frozen build, so it is started as a binary rather
@@ -633,11 +738,30 @@ async function launchBackend() {
   );
 }
 
+/**
+ * Ask macOS for the microphone.
+ *
+ * The app has no Dock icon, so the macOS prompt can open behind other windows.
+ * The window that asked comes forward first. macOS shows the prompt only once,
+ * so focus is taken only while the answer is still open.
+ */
+async function askMicrophone(owner) {
+  if (systemPreferences.getMediaAccessStatus("microphone") === "not-determined") {
+    if (owner && !owner.isDestroyed()) {
+      owner.show();
+      owner.focus();
+    }
+    app.focus({ steal: true });
+  }
+  return systemPreferences.askForMediaAccess("microphone");
+}
+
 app.whenReady().then(async () => {
   try {
     // Dark is the default theme. Every window and the main window background
     // start dark, and the renderer reports the saved choice once it loads.
     nativeTheme.themeSource = "dark";
+    if (await offerMoveToApplications()) return;
     startNotchGlow();
     const token = await launchBackend();
     session.defaultSession.setPermissionCheckHandler(
@@ -662,7 +786,8 @@ app.whenReady().then(async () => {
         const granted =
           app.commandLine.hasSwitch("use-fake-device-for-media-stream") ||
           process.platform !== "darwin" ||
-          (await systemPreferences.askForMediaAccess("microphone"));
+          // The window that owns the call is often hidden, so it stays hidden.
+          (await askMicrophone(null));
         callback(granted);
       },
     );
@@ -714,9 +839,32 @@ app.whenReady().then(async () => {
       if (app.commandLine.hasSwitch("use-fake-device-for-media-stream"))
         return "granted";
       if (process.platform !== "darwin") return "unknown";
-      return (await systemPreferences.askForMediaAccess("microphone"))
+      return (await askMicrophone(BrowserWindow.fromWebContents(event.sender)))
         ? "granted"
         : "denied";
+    });
+    ipcMain.handle("talktome:open-system-settings", async (event, pane) => {
+      requireSetupFrame(event);
+      if (!Object.hasOwn(SETTINGS_PANES, pane)) throw new Error("This settings pane is not permitted.");
+      await shell.openExternal(SETTINGS_PANES[pane]);
+      return true;
+    });
+    ipcMain.handle("talktome:login-item", (event) => {
+      requireSetupFrame(event);
+      return loginItem();
+    });
+    ipcMain.handle("talktome:set-login-item", (event, enabled) => {
+      requireSetupFrame(event);
+      if (!loginItem().available)
+        throw new Error("Open at login works only in the installed app.");
+      app.setLoginItemSettings({ openAtLogin: Boolean(enabled) });
+      return loginItem();
+    });
+    // Settings only: this asks for an administrator password.
+    ipcMain.handle("talktome:install-command-all-users", async (event) => {
+      requireMainFrame(event);
+      if (process.platform !== "darwin") throw new Error("This works only on macOS.");
+      return installCommandForAllUsers();
     });
     ipcMain.handle("talktome:glow-color", (event, next) => {
       requireSetupFrame(event);

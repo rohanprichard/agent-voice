@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The version is in three files. A tag that does not match all of them
+      # stops the release before anything is built.
+      - name: Check that the tag matches the version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          node_version=$(node -p "require('./package.json').version")
+          python_version=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)
+          package_version=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/talktome/__init__.py)
+          echo "tag $tag, package.json $node_version, pyproject.toml $python_version, __init__.py $package_version"
+          [ "$tag" = "$node_version" ] && [ "$tag" = "$python_version" ] && [ "$tag" = "$package_version" ]
+
+      - run: uv sync --frozen --extra speech
+      - run: npm ci
+      - name: Install the Electron binary
+        run: test -d node_modules/electron/dist || node node_modules/electron/install.js
+      # build-app.sh compiles the notch helper. This shows the toolchain in the log.
+      - run: xcrun swiftc --version
+
+      - run: sh packaging/build-app.sh
+
+      - name: Start the server from the built app
+        run: |
+          app=dist/app/mac-arm64/TalkToMe.app
+          codesign --verify --deep --strict "$app"
+          export TALKTOME_DATA_DIR="$RUNNER_TEMP/smoke" TALKTOME_PORT=8764
+          "$app/Contents/Resources/talktome-server/talktome-server" &
+          server=$!
+          for _ in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8764/v1/health && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8764/v1/health
+          kill "$server"
+
+      - name: Write the Homebrew cask values
+        run: |
+          dmg=$(ls dist/app/*.dmg)
+          {
+            echo "### Homebrew cask"
+            echo '```ruby'
+            echo "version \"${GITHUB_REF_NAME#v}\""
+            echo "sha256 \"$(shasum -a 256 "$dmg" | cut -d' ' -f1)\""
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/app/*.dmg
+            dist/app/*.zip
+            dist/app/latest-mac.yml
+
+  # Off until the owner sets up trusted publishing on PyPI and sets the
+  # repository variable PUBLISH_PYPI to true.
+  pypi:
+    if: vars.PUBLISH_PYPI == 'true'
+    needs: app
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv build
+      - uses: pypa/gh-action-pypi-publish@release/v1

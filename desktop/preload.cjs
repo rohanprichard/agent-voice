@@ -5,6 +5,10 @@ contextBridge.exposeInMainWorld("talktomeDesktop", {
   setTheme: (mode) => ipcRenderer.invoke("talktome:theme", mode),
   microphoneStatus: () => ipcRenderer.invoke("talktome:microphone-status"),
   requestMicrophone: () => ipcRenderer.invoke("talktome:request-microphone"),
+  openSystemSettings: (pane) => ipcRenderer.invoke("talktome:open-system-settings", pane),
+  loginItem: () => ipcRenderer.invoke("talktome:login-item"),
+  setLoginItem: (enabled) => ipcRenderer.invoke("talktome:set-login-item", Boolean(enabled)),
+  installCommandForAllUsers: () => ipcRenderer.invoke("talktome:install-command-all-users"),
   setGlowColor: (color) => ipcRenderer.invoke("talktome:glow-color", color),
   onOpenSettings: (callback) =>
     ipcRenderer.on("talktome:open-settings", () => callback()),

@@ -6,7 +6,6 @@ import threading
 import wave
 
 import httpx
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +25,8 @@ KOKORO_URL = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/mode
 
 
 def wav_audio(samples, sample_rate):
+    import numpy as np
+
     output = io.BytesIO()
     with wave.open(output, "wb") as file:
         file.setnchannels(1)
@@ -40,7 +41,13 @@ class KokoroVoice:
         self.directory = directory / "models" / "kokoro"
         self.model = None
         self.lock = threading.Lock()
-        self.state = {"status": "needs_model", "progress": 0, "error": None}
+        # The size is known before the download, so setup can show it first.
+        self.state = {
+            "status": "needs_model",
+            "progress": 0,
+            "error": None,
+            "total_bytes": sum(size for _, size, _ in KOKORO_FILES),
+        }
 
     def setup(self):
         with self.lock:

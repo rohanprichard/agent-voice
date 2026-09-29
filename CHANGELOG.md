@@ -16,12 +16,17 @@ This file lists the changes that users see. The format follows
 - Smart Turn decides when the user stops speaking.
 - The user can interrupt the voice by speaking.
 - The notch call surface on Macs with a notch.
+- A release workflow builds the disk image and a zip when a `v*` tag is pushed.
+- A Homebrew cask for the future tap `rohanprichard/tap`.
 
 ### Changed
 
 - Dark is the default theme. You can select System or Light in Settings.
 - OpenClaw session keys with `+`, `@`, and `!` can ring. A Codex session ID keeps the strict pattern.
 - The app asks the login shell for PATH again after 60 seconds, so a new PATH folder is found without a restart.
+- The app has an ad-hoc signature and needs macOS 14 or later.
+- The frozen server is 146 MB instead of 210 MB.
+- The Python package installs without the speech stack. The desktop server needs the `speech` extra.
 
 ### Removed
 
@@ -33,6 +38,8 @@ This file lists the changes that users see. The format follows
 
 ### Fixed
 
+- The notch helper starts on macOS 14. The build targeted the macOS of the build Mac.
+- A model download no longer starts a second frozen server for the multiprocessing resource tracker.
 - Smart Turn now loads. The model has a variable batch size, and the check required a fixed one.
 - Hermes turns now finish. The adapter now reads the event name from the event data.
 - Hermes approvals now send the `choice` field that Hermes requires.
