@@ -59,6 +59,9 @@ def skill_targets(home: Path) -> dict[str, Path]:
     openclaw_home = Path(os.environ.get("OPENCLAW_STATE_DIR") or home / ".openclaw").expanduser()
     if openclaw_home.is_dir():
         targets["openclaw"] = openclaw_home / "skills" / SKILL_DIR / "SKILL.md"
+    claude_home = Path(os.environ.get("CLAUDE_CONFIG_DIR") or home / ".claude").expanduser()
+    if claude_home.is_dir():
+        targets["claude"] = claude_home / "skills" / SKILL_DIR / "SKILL.md"
     return targets
 
 
@@ -80,8 +83,20 @@ def skill_installed(home: Path) -> bool:
 
 
 # Where a command can live and still be found by whatever shell an agent runs in.
-# The first one that exists and is writable wins.
+# The first one that is on PATH and writable wins.
 COMMAND_DIRS = ("~/.local/bin", "/opt/homebrew/bin", "/usr/local/bin")
+
+# The folder the desktop app can write into after an administrator prompt. On a
+# Mac without Homebrew it is on PATH through /etc/paths but belongs to root.
+SYSTEM_COMMAND_DIR = "/usr/local/bin"
+
+# The copy the desktop app puts into SYSTEM_COMMAND_DIR, written here first so the
+# script always comes from this module.
+STAGED_COMMAND = "talktome-command"
+
+APP_ID = "com.rohanprichard.talktome"
+SERVER_IN_APP = "Contents/Resources/talktome-server/talktome-server"
+APP_FOLDERS = ("/Applications/TalkToMe.app", "$HOME/Applications/TalkToMe.app")
 
 
 # A login shell can take seconds, so its answer is kept for a short time. The
@@ -160,6 +175,66 @@ def command_dirs(path_env: str) -> list[Path]:
     return [directory for directory in wanted if directory in on_path]
 
 
+def writable(directory: Path) -> bool:
+    """Whether a folder can be written, or made, without an administrator."""
+    probe = directory
+    while not probe.exists() and probe != probe.parent:
+        probe = probe.parent
+    return os.access(probe, os.W_OK)
+
+
+def translocated(path: str | None) -> bool:
+    # macOS runs an app opened from a disk image or Downloads from a random,
+    # read-only copy that is gone after the app quits.
+    return bool(path) and "/AppTranslocation/" in path
+
+
+def app_bundle(python: str) -> str | None:
+    """The .app folder around a frozen server, or None for a checkout."""
+    suffix = "/" + SERVER_IN_APP
+    return python[: -len(suffix)] if python.endswith(suffix) else None
+
+
+def command_script(python: str, launcher: str | None = None, apps=APP_FOLDERS) -> str:
+    """The text of the `talktome` shim.
+
+    A checkout points at its own interpreter. A packaged app is looked up each
+    time the command runs, because a path written at install time breaks as soon
+    as the user moves the app.
+    """
+    lines = ["#!/bin/sh", "# Written by TalkToMe so an agent can run `talktome call`."]
+    if not app_bundle(python):
+        if launcher:
+            # So the command can open the app itself when it is closed. An agent
+            # that can only reach the user while the app is already open is not
+            # much of a reach, and only the app knows how it wants to be started.
+            lines.append(f"export TALKTOME_LAUNCH={shlex.quote(launcher)}")
+        lines.append(f'exec "{python}" -m talktome "$@"')
+        return "\n".join(lines) + "\n"
+    folders = " ".join(f'"{folder}"' for folder in apps)
+    lines += [
+        "# It finds the app each time it runs, so it keeps working after the app moves.",
+        f'server="{SERVER_IN_APP}"',
+        "app=",
+        f"for candidate in {folders}; do",
+        '  if [ -x "$candidate/$server" ]; then app=$candidate; break; fi',
+        "done",
+        'if [ -z "$app" ]; then',
+        f"  app=$(mdfind \"kMDItemCFBundleIdentifier == '{APP_ID}'\" 2>/dev/null |",
+        "    grep -v /AppTranslocation/ | while IFS= read -r candidate; do",
+        '      if [ -x "$candidate/$server" ]; then echo "$candidate"; break; fi',
+        "    done)",
+        "fi",
+        'if [ -z "$app" ]; then',
+        '  echo "TalkToMe was not found. Move TalkToMe to the Applications folder, then try again." >&2',
+        "  exit 1",
+        "fi",
+        'export TALKTOME_LAUNCH="open -g -a \\"$app\\""',
+        'exec "$app/$server" -m talktome "$@"',
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def install_command(
     home: Path, python: str, path_env: str | None = None, launcher: str | None = None
 ) -> Path:
@@ -169,11 +244,27 @@ def install_command(
     this leaves the instruction pointing at a command that is only in the app's own
     virtual environment, which no terminal has on its PATH: the two are one feature
     and installing either alone installs nothing.
-
-    A shim rather than a copy, so it always runs the interpreter the app runs and
-    cannot drift from it.
     """
-    directories = command_dirs(path_env if path_env is not None else login_path())
+    if translocated(python) or translocated(launcher):
+        raise ValueError(
+            "macOS runs this copy of TalkToMe from a temporary folder. Move TalkToMe "
+            "to the Applications folder, open it again, then install the command."
+        )
+    on_path = command_dirs(path_env if path_env is not None else login_path())
+    script = command_script(python, launcher)
+    directories = [directory for directory in on_path if writable(directory)]
+    if not directories and Path(SYSTEM_COMMAND_DIR) in on_path:
+        # Staged for the desktop app, which copies it after an administrator prompt.
+        from .config import data_dir
+
+        staged = data_dir() / STAGED_COMMAND
+        staged.write_text(script, encoding="utf-8")
+        staged.chmod(0o600)
+        raise ValueError(
+            f"Your shell only searches {SYSTEM_COMMAND_DIR}, and that folder needs an "
+            "administrator. Choose Install for all users, or add this line to "
+            '~/.zshrc and install again:\n    export PATH="$HOME/.local/bin:$PATH"'
+        )
     if not directories:
         fallback = Path("~/.local/bin").expanduser()
         try:
@@ -189,21 +280,17 @@ def install_command(
     target = directories[0] / "talktome"
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
-        lines = [
-            "#!/bin/sh",
-            "# Written by TalkToMe so an agent can run `talktome call`.",
-        ]
-        if launcher:
-            # So the command can open the app itself when it is closed. An agent
-            # that can only reach the user while the app is already open is not
-            # much of a reach, and only the app knows how it wants to be started.
-            lines.append(f"export TALKTOME_LAUNCH={shlex.quote(launcher)}")
-        lines.append(f'exec "{python}" -m talktome "$@"')
-        target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        target.write_text(script, encoding="utf-8")
         target.chmod(0o755)
     except OSError as exc:
         raise ValueError(f"The talktome command could not be written to {target}. {exc}") from None
     return target
+
+
+def needs_admin(path_env: str | None = None) -> bool:
+    """Whether the only folder on PATH for the command is the system one."""
+    on_path = command_dirs(path_env if path_env is not None else login_path())
+    return Path(SYSTEM_COMMAND_DIR) in on_path and not any(writable(d) for d in on_path)
 
 
 # Marks a command as ours. `talktome` is a plausible name for someone else's tool,
@@ -237,6 +324,10 @@ def command_installed(home: Path, python: str, path_env: str | None = None) -> b
         text = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return False
+    if app_bundle(python):
+        # Only the form that looks the app up counts. An older shim holds the
+        # path of one copy of the app, and it breaks when that copy moves.
+        return APP_ID in text and SERVER_IN_APP in text
     marker = f'exec "{python}"'
     if marker in text:
         return True
@@ -263,17 +354,30 @@ def install_skill(home: Path) -> dict:
     return skill_status(home)
 
 
+def uninstall_skill(home: Path) -> dict:
+    for target in skill_targets(home).values():
+        try:
+            target.unlink(missing_ok=True)
+            target.parent.rmdir()
+        except OSError:
+            pass
+    return skill_status(home)
+
+
 def skill_status(home: Path) -> dict:
     python = sys.executable
+    command = command_installed(home, python)
     return {
         "id": "skill",
         "name": "TalkToMe skill",
         "detected": True,
         # Installed means an agent can actually do what the skill says, which needs
         # the command as well as the instructions.
-        "installed": skill_installed(home) and command_installed(home, python),
+        "installed": skill_installed(home) and command,
         "skill": skill_installed(home),
-        "command": command_installed(home, python),
+        "command": command,
+        # The desktop app offers Install for all users only when nothing else works.
+        "admin_install": not command and needs_admin(),
         "path": str(skill_target(home)),
         "hosts": [
             {"id": host, "path": str(target), "skill": _skill_current(target)}
