@@ -28,9 +28,9 @@ Each command prints one JSON object. A refused request prints one sentence to st
 ## Ring and accept
 
 1. The agent runs `talktome call` with its session ID, an optional `--greeting`, and an optional `--name`.
-2. The call surface rings and shows the name. The ring stops after 10 seconds.
-3. The user selects **Answer**. The call starts, and the app speaks the greeting.
-4. The command returns `answered: true`. If the ring stopped, it returns `answered: false`.
+2. The call surface rings and shows the name. A macOS notification also shows the name. The ring stops after 30 seconds.
+3. The user selects **Answer**. The call starts, and the app speaks the greeting. The app prepares the greeting audio while the call rings.
+4. The command returns `answered: true`. If the user selects **Decline** or the ring stops, it returns `answered: false`.
 5. Each user utterance goes to the agent. Each reply from the agent plays in the call.
 6. The call ends when the user selects **End**, or when the agent runs `talktome end`.
 

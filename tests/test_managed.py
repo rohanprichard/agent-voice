@@ -525,12 +525,66 @@ async def attached(tmp_path):
 async def test_ringing_does_not_start_a_call(tmp_path):
     # Ringing asks a question. Creating the call before it is answered would speak
     # the greeting into an empty room and show a live pill to nobody.
-    async with attached(tmp_path) as (room, managed, audio):
+    async with attached(tmp_path) as (room, managed, _):
         snapshot = await managed.attach("thread-9", str(tmp_path), "Hello?", "Auth refactor")
         assert snapshot["status"] == "ringing"
         assert room.call_id is None
-        assert audio == []
+        await asyncio.sleep(0.01)
+        assert not any(event["type"] == "agent.audio" for event in room.events)
         assert snapshot["ring"]["name"] == "Auth refactor"
+
+
+async def test_the_greeting_is_made_while_it_rings(tmp_path):
+    async with attached(tmp_path) as (room, managed, audio):
+        await managed.attach("thread-9", str(tmp_path), "Hello?")
+        await wait_for(lambda: audio == ["Hello?"])
+        await managed.accept()
+        await wait_for(lambda: any(event["type"] == "agent.audio" for event in room.events))
+        # The audio made during the ring is the audio that plays.
+        assert audio == ["Hello?"]
+
+
+async def test_a_declined_ring_throws_the_greeting_away(tmp_path):
+    release = asyncio.Event()
+    started = []
+
+    async def synthesize(text):
+        started.append(text)
+        await release.wait()
+        return b"RIFF"
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr("talktome.managed.AttachedAdapter", AttachAdapter)
+        async with session(tmp_path, synthesize, start=False) as (_room, managed, _):
+            await managed.attach("thread-9", str(tmp_path), "Hello?")
+            await wait_for(lambda: started == ["Hello?"])
+            prepared = managed.greeting_audio
+            await managed.decline()
+            await asyncio.sleep(0)
+            assert prepared.cancelled()
+            assert managed.greeting_audio is None
+
+
+async def test_an_answer_is_reported_while_the_call_is_still_opening(tmp_path):
+    # `accept` awaits the room and the greeting. A caller that looks in that gap
+    # must already see the call as taken.
+    async with attached(tmp_path) as (room, managed, _):
+        snapshot = await managed.attach("thread-9", str(tmp_path), "Hello?")
+        opening = asyncio.Event()
+        release = asyncio.Event()
+        start = room.start
+
+        async def slow_start():
+            opening.set()
+            await release.wait()
+            return await start()
+
+        room.start = slow_start
+        accepting = asyncio.create_task(managed.accept())
+        await opening.wait()
+        assert await managed.answered(snapshot["ring"]["id"], sleep=lambda _: asyncio.sleep(0))
+        release.set()
+        await accepting
 
 
 async def test_the_caller_name_falls_back_to_the_project_folder(tmp_path):
@@ -600,10 +654,12 @@ async def test_a_stale_answer_cannot_take_a_later_call(tmp_path):
             await managed.decline("not-this-ring")
 
 
-def test_a_ring_does_not_outstay_the_attention_it_asks_for():
-    # There is no way to dismiss a ring by hand, so this window is the whole of the
-    # time a user has to notice it, decide, and reach the pill.
-    assert 5 <= managed_module.RING_TIMEOUT <= 20
+def test_the_ring_and_its_waits_agree():
+    from talktome import cli
+
+    assert managed_module.RING_TIMEOUT == 30
+    assert managed_module.ANSWER_WAIT > managed_module.RING_TIMEOUT
+    assert cli.REQUEST_TIMEOUT > managed_module.ANSWER_WAIT
 
 
 async def test_an_unanswered_ring_stops_on_its_own(tmp_path, monkeypatch):

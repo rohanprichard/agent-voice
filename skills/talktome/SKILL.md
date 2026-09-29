@@ -208,7 +208,7 @@ The app uses the session name when available. Use `--name` for a call title.
 Transcript labels use the agent name, not the call title.
 
 Read `answered` in the result. If it is false, say that the call was not answered once.
-Do not call repeatedly. A ring stops after its time limit.
+Do not call repeatedly. A local ring stops after 30 seconds, or when the user declines it.
 
 The command exchanges private files with the app. It can work when the host sandbox blocks loopback network access.
 The host still needs permission to write to the workspace or temporary directory.
