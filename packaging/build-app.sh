@@ -9,8 +9,9 @@
 # about a minute, needs no network, and only has to be redone when Python changes,
 # which is what --skip-server is for.
 #
-# The result is unsigned. It opens on this machine without a prompt, because a
-# locally built image is never quarantined, and it will not open on anyone else's.
+# The result has an ad-hoc signature, not a Developer ID. It opens on this machine
+# without a prompt, because a locally built image is never quarantined. A download
+# is quarantined, so another Mac opens it only after Privacy & Security > Open Anyway.
 set -e
 cd "$(dirname "$0")/.."
 
@@ -57,8 +58,11 @@ node scripts/make-app-icon.mjs
 echo "==> building the native notch glow"
 NOTCH_APP=dist/native/NotchSurface.app
 mkdir -p "$NOTCH_APP/Contents/MacOS"
-xcrun swiftc -O native/NotchGlow.swift -o "$NOTCH_APP/Contents/MacOS/NotchSurface"
-cat > "$NOTCH_APP/Contents/Info.plist" <<'PLIST'
+# swiftc targets this Mac's macOS by default, and then the helper does not start on
+# an older one. Keep this the same as minimumSystemVersion in package.json.
+xcrun swiftc -O -target arm64-apple-macos14.0 native/NotchGlow.swift -o "$NOTCH_APP/Contents/MacOS/NotchSurface"
+VERSION=$(node -p "require('./package.json').version")
+cat > "$NOTCH_APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -66,6 +70,9 @@ cat > "$NOTCH_APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleIdentifier</key><string>com.rohanprichard.talktome.notch</string>
   <key>CFBundleName</key><string>TalkToMe Notch</string>
   <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
+  <key>CFBundleVersion</key><string>$VERSION</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
 </dict></plist>
 PLIST
@@ -83,12 +90,15 @@ NAME=$(basename "$APP" .app)
 INSTALLED=$(du -sh "$APP" | cut -f1)
 SERVER=$([ -x "$APP/Contents/Resources/talktome-server/talktome-server" ] && echo yes || echo MISSING)
 MENUBAR=$(/usr/libexec/PlistBuddy -c "Print :LSUIElement" "$APP/Contents/Info.plist" 2>/dev/null || echo missing)
+SIGNED=$(codesign --verify --deep --strict "$APP" 2>&1 && echo "ad-hoc, valid" || echo INVALID)
 hdiutil detach "$VOLUME" -quiet
 
 printf '\n%s\n' "$DMG"
 printf '  app          %s, %s installed\n' "$NAME" "$INSTALLED"
 printf '  server       %s\n' "$SERVER"
 printf '  menu bar     %s\n' "$MENUBAR"
+printf '  signature    %s\n' "$SIGNED"
 printf '  size         %s\n' "$(du -h "$DMG" | cut -f1)"
+printf '  zip          %s\n' "$(ls -t dist/app/*.zip | head -1)"
 printf '  sha256       %s\n' "$(shasum -a 256 "$DMG" | cut -c1-32)"
 printf '  install      open it, drag %s to Applications\n' "$NAME"

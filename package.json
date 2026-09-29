@@ -62,22 +62,24 @@
       "icon": "build/icon.icns",
       "target": [
         {
-          "target": "dir",
+          "target": "dmg",
           "arch": [
             "arm64"
           ]
         },
         {
-          "target": "dmg",
+          "target": "zip",
           "arch": [
             "arm64"
           ]
         }
       ],
-      "identity": null,
+      "identity": "-",
       "hardenedRuntime": false,
+      "minimumSystemVersion": "14.0",
       "extendInfo": {
-        "LSUIElement": true
+        "LSUIElement": true,
+        "NSMicrophoneUsageDescription": "TalkToMe listens to you during a call with your agent."
       }
     }
   }
