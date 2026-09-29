@@ -1,5 +1,6 @@
 import asyncio
 import hmac
+import json
 import logging
 import math
 import secrets
@@ -12,7 +13,7 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -29,6 +30,10 @@ from .speech import MODELS, Speech
 from .timing import TimingHistory
 
 logger = logging.getLogger(__name__)
+
+# A stream ends after this long and the browser opens it again from the last
+# event id. A stream that never ended would hold the server open at shutdown.
+STREAM_SECONDS = 25
 
 
 class AuthBody(BaseModel):
@@ -247,6 +252,61 @@ def create_app(*, token=None, speech=None):
         if remote_connector is None:
             return {"configured": False}
         return {"configured": True, **remote_connector.status()}
+
+    def sse(kind, data, event_id=None):
+        head = f"id: {event_id}\n" if event_id is not None else ""
+        return f"{head}event: {kind}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n"
+
+    @app.get("/v1/stream")
+    async def stream(request: Request):
+        """One snapshot, then only what changed.
+
+        A reply delta carries its own text, so a streamed reply costs a few
+        hundred bytes an event instead of the whole room. A client that fell
+        behind the event buffer gets a new snapshot.
+        """
+        try:
+            resume = int(request.headers.get("last-event-id", ""))
+        except ValueError:
+            resume = None
+
+        async def events():
+            nonlocal resume
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + STREAM_SECONDS
+            after = resume if resume is not None and 0 <= resume <= room.sequence else None
+            spoken = None
+            yield "retry: 500\n\n"
+            while loop.time() < deadline:
+                if after is None:
+                    after = room.sequence
+                    state = {
+                        "room": room.snapshot(), "speech": speech_status(),
+                        "managed": managed.snapshot(), "voice": voice,
+                    }
+                    spoken = json.dumps(state["speech"])
+                    yield sse("snapshot", state, after)
+                    continue
+                batch, gap = await room.wait(after, min(1, deadline - loop.time()))
+                if gap:
+                    after = None
+                    continue
+                for event in batch:
+                    after = event["seq"]
+                    data = {"event": {k: v for k, v in event.items() if k != "agent_text"}}
+                    # A delta changes one message and nothing else.
+                    if event["type"] != "message.delta":
+                        data["room"] = room.snapshot(messages=False)
+                        data["managed"] = managed.snapshot()
+                    yield sse("event", data, after)
+                speech = speech_status()
+                if json.dumps(speech) != spoken:
+                    spoken = json.dumps(speech)
+                    yield sse("speech", speech, after)
+
+        return StreamingResponse(
+            events(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no"},
+        )
 
     @app.get("/v1/events")
     async def events(after: int = Query(0, ge=0), timeout: float = Query(25, ge=0, le=25)):

@@ -452,8 +452,11 @@ class ManagedSession:
             "text": "",
             "time": datetime.now(UTC).isoformat(),
         }
-        await self.room.emit("agent.greeting", text=text)
         item_id = f"greeting-{uuid4()}"
+        await self.room.emit(
+            "agent.greeting", text=text, item_id=item_id, turn_id=event["turn_id"],
+            name=self.room.agent["name"], kind="greeting",
+        )
         message = {
             "role": "agent",
             "name": self.room.agent["name"],
@@ -765,7 +768,13 @@ class ManagedSession:
                     self.room.mark_timing(
                         event["turn_id"], "first_message_ms", time.time_ns() / 1_000_000
                     )
-                update = await self.room.emit(event_type, turn_id=event["turn_id"], item_id=item_id)
+                # The event carries the new text, so a client can follow the
+                # reply without reading the whole room again.
+                update = await self.room.emit(
+                    event_type, turn_id=event["turn_id"], item_id=item_id,
+                    text=added if event_type == "message.delta" else message["text"],
+                    kind=message["kind"], name=message["name"],
+                )
                 message["seq"] = update["seq"]
                 if added or event_type == "message.done":
                     enqueue_speech(item_id, added, event_type == "message.done")

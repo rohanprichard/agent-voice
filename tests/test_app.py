@@ -1,5 +1,6 @@
 import asyncio
 import io
+import json
 import os
 import threading
 import time
@@ -336,3 +337,92 @@ def test_the_inbox_keeps_watching_after_a_failed_pass(app, monkeypatch, caplog):
 
     assert reply["result"] == {"status": "idle"}
     assert "The inbox could not be read" in caplog.text
+
+
+def read_stream(text):
+    events = []
+    for block in text.split("\n\n"):
+        fields = dict(
+            line.split(": ", 1) for line in block.splitlines() if ": " in line
+        )
+        if "event" in fields:
+            events.append((fields["event"], json.loads(fields["data"]), fields.get("id")))
+    return events
+
+
+async def stream_once(app, work=None, headers=None):
+    import httpx
+
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://testserver",
+            headers={"Authorization": "Bearer test-token", **(headers or {})},
+        ) as client,
+    ):
+        task = asyncio.create_task(work()) if work else None
+        response = await client.get("/v1/stream")
+        if task:
+            await task
+    assert response.headers["content-type"].startswith("text/event-stream")
+    return read_stream(response.text)
+
+
+async def test_the_stream_sends_a_snapshot_then_small_deltas(monkeypatch):
+    from talktome import app as app_module
+
+    monkeypatch.setattr(app_module, "STREAM_SECONDS", 0.5)
+    app = create_app(token="test-token", speech=FakeSpeech())
+    room = app.state.room
+    await room.start()
+    for index in range(150):
+        room.messages.append({"role": "user", "text": "word " * 40, "call_id": room.call_id})
+
+    async def reply():
+        await asyncio.sleep(0.1)
+        for text in ("Hel", "lo"):
+            await room.emit(
+                "message.delta", item_id="m-1", text=text, kind="message", name="Codex", turn_id="t"
+            )
+
+    events = await stream_once(app, reply)
+    assert events[0][0] == "snapshot"
+    assert len(events[0][1]["room"]["messages"]) == 150
+    deltas = [data for kind, data, _ in events if kind == "event"]
+    assert [data["event"]["text"] for data in deltas] == ["Hel", "lo"]
+    # A delta does not carry the room, so its size does not grow with the call.
+    assert all("room" not in data and len(json.dumps(data)) < 400 for data in deltas)
+
+
+async def test_the_stream_resumes_after_the_last_event_it_sent(monkeypatch):
+    from talktome import app as app_module
+
+    monkeypatch.setattr(app_module, "STREAM_SECONDS", 0.3)
+    app = create_app(token="test-token", speech=FakeSpeech())
+    room = app.state.room
+    await room.emit("first")
+    seen = room.sequence
+    await room.emit("second")
+    events = await stream_once(app, headers={"Last-Event-ID": str(seen)})
+    sent = [data["event"]["type"] for kind, data, _ in events if kind == "event"]
+    assert sent[0] == "second" and "first" not in sent
+    assert not any(kind == "snapshot" for kind, _, _ in events)
+
+
+async def test_a_stream_that_fell_behind_gets_a_new_snapshot(monkeypatch):
+    from talktome import app as app_module
+
+    monkeypatch.setattr(app_module, "STREAM_SECONDS", 0.3)
+    app = create_app(token="test-token", speech=FakeSpeech())
+    room = app.state.room
+    for _ in range(600):
+        await room.emit("filler")
+    events = await stream_once(app, headers={"Last-Event-ID": "1"})
+    assert events[0][0] == "snapshot"
+    assert not any(kind == "event" for kind, _, _ in events)
+
+
+def test_the_stream_needs_the_token(app):
+    with TestClient(app) as client:
+        assert client.get("/v1/stream").status_code == 401
