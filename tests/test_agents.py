@@ -492,8 +492,7 @@ def test_a_system_folder_is_left_for_the_administrator_prompt(
         system.chmod(0o755)
 
 
-def test_the_skill_goes_to_claude_code_when_it_is_there(tmp_path, monkeypatch):
-    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+def test_the_skill_goes_to_claude_code_when_it_is_there(tmp_path):
     assert "claude" not in agents.skill_targets(tmp_path)
     (tmp_path / ".claude").mkdir()
     target = tmp_path / ".claude" / "skills" / "talktome" / "SKILL.md"
@@ -505,6 +504,25 @@ def test_the_skill_goes_to_claude_code_when_it_is_there(tmp_path, monkeypatch):
     assert not target.parent.exists()
     assert not agents.skill_target(tmp_path).exists()
     assert (tmp_path / ".claude").is_dir()
+
+
+def test_the_skill_goes_to_the_hermes_home_that_hermes_names(tmp_path, monkeypatch):
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    monkeypatch.setenv("HERMES_HOME", str(profile))
+    assert agents.skill_targets(tmp_path)["hermes"] == profile / "skills" / "talktome" / "SKILL.md"
+
+
+def test_the_skill_sends_a_paired_server_across_the_bridge():
+    # A Hermes agent on a server once read "run the commands on the Mac", went
+    # looking for a telephony tool, and then tried to build TalkToMe to learn how.
+    text = agents.skill_source().read_text()
+    description = text.split("description:")[1].split("\n")[0]
+    assert "not a phone call" in description
+    assert "remote bridge" in description
+    local_or_remote = text.split("## Local or remote")[1].split("\n## ")[0]
+    assert "talktome remote-status" in local_or_remote
+    assert "add `--remote`" in local_or_remote
 
 
 def test_the_skill_gives_claude_code_a_cooperative_call():

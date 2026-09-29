@@ -34,6 +34,17 @@ def isolated_shared_inbox(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_real_agent_homes(monkeypatch):
+    """Skill targets read these before the home folder.
+
+    An agent host exports its own, so a test run from inside Hermes would install
+    and remove the skill in the real `~/.hermes` while the home was a temporary one.
+    """
+    for name in ("HERMES_HOME", "OPENCLAW_STATE_DIR", "CLAUDE_CONFIG_DIR"):
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def no_remembered_commands():
     """Nothing looks a command up twice across tests.
 
