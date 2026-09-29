@@ -31,6 +31,10 @@ jobs:
           [ "$tag" = "$node_version" ] && [ "$tag" = "$python_version" ] && [ "$tag" = "$package_version" ]
 
       - run: uv sync --frozen --extra speech
+      # A release is built only from code that passes the same checks as CI.
+      - run: uv run ruff check
+      - run: uv run pytest -q
+      - run: node --test tests/*.test.mjs
       - run: npm ci
       - name: Install the Electron binary
         run: test -d node_modules/electron/dist || node node_modules/electron/install.js
