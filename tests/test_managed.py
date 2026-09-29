@@ -525,12 +525,66 @@ async def attached(tmp_path):
 async def test_ringing_does_not_start_a_call(tmp_path):
     # Ringing asks a question. Creating the call before it is answered would speak
     # the greeting into an empty room and show a live pill to nobody.
-    async with attached(tmp_path) as (room, managed, audio):
+    async with attached(tmp_path) as (room, managed, _):
         snapshot = await managed.attach("thread-9", str(tmp_path), "Hello?", "Auth refactor")
         assert snapshot["status"] == "ringing"
         assert room.call_id is None
-        assert audio == []
+        await asyncio.sleep(0.01)
+        assert not any(event["type"] == "agent.audio" for event in room.events)
         assert snapshot["ring"]["name"] == "Auth refactor"
+
+
+async def test_the_greeting_is_made_while_it_rings(tmp_path):
+    async with attached(tmp_path) as (room, managed, audio):
+        await managed.attach("thread-9", str(tmp_path), "Hello?")
+        await wait_for(lambda: audio == ["Hello?"])
+        await managed.accept()
+        await wait_for(lambda: any(event["type"] == "agent.audio" for event in room.events))
+        # The audio made during the ring is the audio that plays.
+        assert audio == ["Hello?"]
+
+
+async def test_a_declined_ring_throws_the_greeting_away(tmp_path):
+    release = asyncio.Event()
+    started = []
+
+    async def synthesize(text):
+        started.append(text)
+        await release.wait()
+        return b"RIFF"
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr("talktome.managed.AttachedAdapter", AttachAdapter)
+        async with session(tmp_path, synthesize, start=False) as (_room, managed, _):
+            await managed.attach("thread-9", str(tmp_path), "Hello?")
+            await wait_for(lambda: started == ["Hello?"])
+            prepared = managed.greeting_audio
+            await managed.decline()
+            await asyncio.sleep(0)
+            assert prepared.cancelled()
+            assert managed.greeting_audio is None
+
+
+async def test_an_answer_is_reported_while_the_call_is_still_opening(tmp_path):
+    # `accept` awaits the room and the greeting. A caller that looks in that gap
+    # must already see the call as taken.
+    async with attached(tmp_path) as (room, managed, _):
+        snapshot = await managed.attach("thread-9", str(tmp_path), "Hello?")
+        opening = asyncio.Event()
+        release = asyncio.Event()
+        start = room.start
+
+        async def slow_start():
+            opening.set()
+            await release.wait()
+            return await start()
+
+        room.start = slow_start
+        accepting = asyncio.create_task(managed.accept())
+        await opening.wait()
+        assert await managed.answered(snapshot["ring"]["id"], sleep=lambda _: asyncio.sleep(0))
+        release.set()
+        await accepting
 
 
 async def test_the_caller_name_falls_back_to_the_project_folder(tmp_path):
@@ -600,10 +654,12 @@ async def test_a_stale_answer_cannot_take_a_later_call(tmp_path):
             await managed.decline("not-this-ring")
 
 
-def test_a_ring_does_not_outstay_the_attention_it_asks_for():
-    # There is no way to dismiss a ring by hand, so this window is the whole of the
-    # time a user has to notice it, decide, and reach the pill.
-    assert 5 <= managed_module.RING_TIMEOUT <= 20
+def test_the_ring_and_its_waits_agree():
+    from talktome import cli
+
+    assert managed_module.RING_TIMEOUT == 30
+    assert managed_module.ANSWER_WAIT > managed_module.RING_TIMEOUT
+    assert cli.REQUEST_TIMEOUT > managed_module.ANSWER_WAIT
 
 
 async def test_an_unanswered_ring_stops_on_its_own(tmp_path, monkeypatch):
@@ -764,3 +820,63 @@ def test_other_agents_refuse_whitespace_control_characters_and_long_ids(thread):
 def test_other_agents_accept_a_remote_pair_id_up_to_the_limit():
     assert managed_module.valid_session_id("pair-1:thread-1", "hermes") is True
     assert managed_module.valid_session_id("x" * 512, "generic") is True
+
+
+async def test_closing_does_not_wait_for_a_slow_sentence(tmp_path):
+    started = asyncio.Event()
+
+    async def synthesize(text):
+        started.set()
+        await asyncio.Event().wait()
+
+    async with session(tmp_path, synthesize) as (room, managed, _):
+        await managed.submit(await room.utterance(room.call_id, "hello"))
+        await started.wait()
+        async with asyncio.timeout(1):
+            await managed.close()
+        assert managed.speaker is None
+        assert room.agent is None
+
+
+async def test_a_failed_teardown_step_does_not_stop_the_others(tmp_path):
+    class BrokenClose(FakeAdapter):
+        async def close(self):
+            raise RuntimeError("The host went away.")
+
+    async with session(tmp_path, adapter=BrokenClose) as (room, managed, _):
+        speaker = managed.speaker
+        await managed.close()
+        assert speaker.done()
+        assert room.agent is None
+        assert managed.status == "disconnected"
+
+
+async def test_waking_up_opens_the_voice_socket_again(tmp_path):
+    class Connection:
+        def __init__(self):
+            self.closed = False
+
+        async def close(self):
+            self.closed = True
+
+    warmed = []
+
+    async def warm():
+        warmed.append(True)
+
+    async with session(tmp_path) as (_room, managed, _):
+        old = Connection()
+        managed.voice_connection = old
+        managed.warm_stream = warm
+        managed._prepare_voice = warm
+        await managed.resume()
+        await managed.voice_warmup
+        assert old.closed
+        assert managed.voice_connection is None
+        assert warmed == [True]
+
+
+async def test_waking_up_without_a_voice_socket_does_nothing(tmp_path):
+    async with session(tmp_path) as (_room, managed, _):
+        await managed.resume()
+        assert managed.voice_warmup is None

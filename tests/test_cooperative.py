@@ -73,3 +73,14 @@ async def test_a_host_that_stops_listening_ends_the_turn(monkeypatch):
     with pytest.raises(RuntimeError, match="stopped listening"):
         await asyncio.wait_for(adapter.run("hello", noop, None), 2)
     assert adapter.current is None
+
+
+async def test_the_capability_reports_agree():
+    from talktome.managed import ManagedSession
+    from talktome.room import Room
+
+    managed = ManagedSession(Room(), None, None)
+    managed.adapter = await started()
+    report = managed.capabilities()
+    assert report["supports_cancel_speech"] is report["cancel_speech"] is True
+    assert report["supports_cancel_work"] is report["cancel_work"] is False

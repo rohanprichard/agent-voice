@@ -79,14 +79,13 @@ uv tool install "talktome-local @ git+https://github.com/rohanprichard/talktome"
 
 ## First-run setup
 
-The first start opens a setup window with six steps:
+The first start opens a setup window with five steps:
 
 1. **Welcome.** The window explains the call flow.
 2. **Microphone.** Select **Allow microphone**. macOS asks for permission.
 3. **ElevenLabs.** Enter an ElevenLabs API key, or select **Later** to use local speech.
 4. **Agent connection.** Select **Install**. This installs the agent skill and the `talktome` command.
-5. **Glow color.** Select the color that the call surface shows during a live call.
-6. **All set.** Ask your agent to call.
+5. **All set.** Ask your agent to call.
 
 You can skip a step with **Later**. Settings contains the same options.
 To run setup again, quit the app and run `npm run reset`.
@@ -147,6 +146,23 @@ Settings can select a fixed pause instead. See [Smart Turn](docs/SMART_TURN.md).
 
 Settings also sets the position of the call surface: **Bottom** or **Top center**.
 
+## Call history and call back
+
+Open **Calls…** from the menu bar item or from Settings. The Calls window lists each call, newest first.
+A missed call shows a count next to the menu bar icon and a macOS notification.
+**Call back** starts a call to the same session at once, with no ring.
+The **Recent** menu calls back one of the last five callers.
+
+| Agent | Call back |
+| --- | --- |
+| Codex | Joins the thread again through its terminal. If no terminal holds the thread, **Open in Terminal** runs `codex resume`. |
+| Claude Code | Runs `claude -p --resume` for each turn. Claude denies a tool that needs permission, unless your Claude settings allow it. |
+| Hermes, OpenClaw | Uses the saved session. |
+| Generic, remote | Not available. |
+
+Transcripts are off by default. Settings can keep them for 7 or 30 days.
+See [call history](docs/CALLS.md) for what the app stores and how to delete it.
+
 ## Speech providers
 
 | Function | Local option | ElevenLabs option |
@@ -171,6 +187,7 @@ The server listens only on `127.0.0.1:8765`. A generated local token protects it
 The desktop windows use an HTTP-only session cookie. Other web origins cannot use the interface.
 The app keeps its token, settings, and models in `~/Library/Application Support/talktome`.
 The app keeps up to 200 transcript messages and 512 events in memory. Closing the app clears them.
+The call history keeps the last 500 calls in `calls/` in the data directory. See [call history](docs/CALLS.md).
 
 The app connects to the network for these purposes only:
 
@@ -201,7 +218,8 @@ Environment settings:
 npm run build:app
 ```
 
-This command freezes the Python server into one binary, draws the icon, compiles the notch helper, and runs electron-builder.
+This command freezes the Python server into one binary, draws the icon, and runs electron-builder.
+The native notch surface is off, so the build does not compile its helper. The call uses the pill.
 The result is `dist/app/TalkToMe-<version>-arm64.dmg` and a zip of the app for the updater.
 The script mounts the disk image after the build and examines its contents and its signature.
 To reuse the last frozen server when only the desktop code changed, run `npm run build:dmg`.

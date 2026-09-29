@@ -10,6 +10,7 @@ see it, because every test that runs the command runs it from the checkout.
 
 import importlib.util
 import runpy
+import subprocess
 import sys
 from pathlib import Path
 
@@ -38,7 +39,7 @@ def test_asking_for_a_module_runs_it_instead_of_starting_a_server(monkeypatch, e
     def refuse(*args, **kwargs):
         raise AssertionError("a request for the command must not start a server")
 
-    monkeypatch.setattr(entry.uvicorn, "run", refuse)
+    monkeypatch.setattr(entry, "serve", refuse)
     assert entry.main() == 0
     assert ran == ["talktome"]
     # argparse reads this, so the command has to see its own arguments and not the
@@ -50,7 +51,7 @@ def test_a_module_name_is_not_taken_for_an_option(monkeypatch, entry):
     ran = []
     monkeypatch.setattr(sys, "argv", ["talktome-server", "-m", "talktome.mcp_server"])
     monkeypatch.setattr(runpy, "run_module", lambda name, **k: ran.append(name))
-    monkeypatch.setattr(entry.uvicorn, "run", lambda *a, **k: None)
+    monkeypatch.setattr(entry, "serve", lambda port: None)
     entry.main()
     assert ran == ["talktome.mcp_server"]
 
@@ -61,12 +62,7 @@ def test_no_arguments_still_starts_the_server(monkeypatch, entry):
     monkeypatch.setattr(sys, "argv", ["talktome-server"])
     monkeypatch.setenv("TALKTOME_PORT", "8799")
     started = []
-
-    def run(app, **kwargs):
-        started.append(kwargs["port"])
-
-    monkeypatch.setattr(entry.uvicorn, "run", run)
-    monkeypatch.setattr(entry, "create_app", lambda: object())
+    monkeypatch.setattr(entry, "serve", started.append)
     entry.main()
     assert started == [8799]
 
@@ -75,6 +71,23 @@ def test_a_long_option_is_not_mistaken_for_a_module(monkeypatch, entry):
     monkeypatch.setattr(sys, "argv", ["talktome-server", "--selftest"])
     printed = []
     monkeypatch.setattr(entry, "selftest", lambda: printed.append(True))
-    monkeypatch.setattr(entry.uvicorn, "run", lambda *a, **k: None)
+    monkeypatch.setattr(entry, "serve", lambda port: None)
     entry.main()
     assert printed == [True]
+
+
+def test_a_command_does_not_load_the_server(tmp_path):
+    # Each `talktome call` runs through `-m`. Loading uvicorn and the app first
+    # made every command wait for a server it never starts.
+    (tmp_path / "probe.py").write_text(
+        "import sys\nprint('uvicorn' in sys.modules, 'talktome.app' in sys.modules)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, str(SERVER), "-m", "probe"],
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        env={"PYTHONPATH": str(tmp_path)},
+        check=True,
+    )
+    assert result.stdout.strip() == "False False"

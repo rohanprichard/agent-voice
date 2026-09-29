@@ -44,8 +44,8 @@ class Room:
             self.changed.notify_all()
         return event
 
-    def snapshot(self):
-        return {
+    def snapshot(self, messages=True):
+        state = {
             "call_id": self.call_id,
             "started_at": self.started_at,
             "turn_id": self.turn_id,
@@ -57,6 +57,9 @@ class Room:
             "playback_epoch": self.revision,
             "last_interruption": self.last_interruption,
         }
+        if not messages:
+            del state["messages"]
+        return state
 
     async def start(self):
         if self.call_id:
@@ -159,7 +162,12 @@ class Room:
         await self.emit("agent.disconnected")
         return {"ok": True}
 
-    async def poll(self, after, timeout=25):
+    async def wait(self, after, timeout=25):
+        """The events after a sequence number, and whether some were lost.
+
+        A client that fell further behind than the event buffer reaches has a
+        gap, and it needs a new snapshot.
+        """
         async with self.changed:
             if self.sequence <= after:
                 try:
@@ -169,9 +177,8 @@ class Room:
                 except TimeoutError:
                     pass
             gap = bool(self.events and after < self.events[0]["seq"] - 1)
-            return {
-                "events": [event for event in self.events if event["seq"] > after],
-                "seq": self.sequence,
-                "reset": gap,
-                "room": self.snapshot(),
-            }
+            return [event for event in self.events if event["seq"] > after], gap
+
+    async def poll(self, after, timeout=25):
+        events, gap = await self.wait(after, timeout)
+        return {"events": events, "seq": self.sequence, "reset": gap, "room": self.snapshot()}

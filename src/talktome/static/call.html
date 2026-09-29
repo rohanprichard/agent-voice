@@ -65,6 +65,15 @@
           <span id="ringing-name">A session</span>
           <span id="ringing-hint">wants to talk</span>
         </span>
+        <button id="decline" aria-label="Decline the call" title="Decline">
+          <span class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path
+                d="M12 7c4.54 0 8.66 1.78 11.71 4.68a1 1 0 0 1 0 1.41l-2.48 2.48a1 1 0 0 1-1.41 0 12.3 12.3 0 0 0-2.66-1.85c-.33-.16-.56-.51-.56-.9v-3.1A15.6 15.6 0 0 0 12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85a1 1 0 0 1-1.41 0L.29 13.09a1 1 0 0 1 0-1.41C3.34 8.78 7.46 7 12 7Z"
+              />
+            </svg>
+          </span>
+        </button>
         <button id="accept" aria-label="Answer the call" title="Answer">
           <span class="icon" aria-hidden="true">
             <svg viewBox="0 0 24 24">
@@ -99,6 +108,8 @@
         <div id="threads">
           <canvas id="canvas" aria-hidden="true"></canvas>
           <span id="status" role="status" aria-live="polite">Connecting</span>
+          <!-- A problem during the call replaces the threads with its one action. -->
+          <button id="alert-action" type="button" hidden>Dismiss</button>
         </div>
 
         <span class="divider" aria-hidden="true"></span>

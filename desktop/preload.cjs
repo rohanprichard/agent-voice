@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld("talktomeDesktop", {
   setLoginItem: (enabled) => ipcRenderer.invoke("talktome:set-login-item", Boolean(enabled)),
   installCommandForAllUsers: () => ipcRenderer.invoke("talktome:install-command-all-users"),
   setGlowColor: (color) => ipcRenderer.invoke("talktome:glow-color", color),
+  openCalls: () => ipcRenderer.invoke("talktome:open-calls"),
   onOpenSettings: (callback) =>
     ipcRenderer.on("talktome:open-settings", () => callback()),
   onOnboardingComplete: (callback) =>
@@ -29,4 +30,5 @@ contextBridge.exposeInMainWorld("talktomeDesktop", {
   setCallState: (state) => ipcRenderer.invoke("talktome:call-state", state),
   onCallCommand: (callback) =>
     ipcRenderer.on("talktome:call-command", (_event, type) => callback(type)),
+  onResume: (callback) => ipcRenderer.on("talktome:resume", () => callback()),
 });

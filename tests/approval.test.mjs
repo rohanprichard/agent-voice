@@ -94,7 +94,7 @@ test("The notch rules for the card touch only the card", () => {
 
 test("The main process opens the panel for a request and closes only what it opened", () => {
   const main = read("../desktop/main.cjs");
-  assert.match(main, /const approval = Boolean\(callId && snapshot\.managed\?\.approvals\?\.length\);/);
+  assert.match(main, /const approval = Boolean\(callState\.callId && callState\.approval\);/);
   assert.match(
     main,
     /if \(approval && !callTranscriptOpen\) \{\s*callTranscriptOpen = true;\s*approvalOpenedPanel = true;/,

@@ -3,6 +3,7 @@
 #
 #   sh packaging/build-app.sh                everything
 #   sh packaging/build-app.sh --skip-server  reuse the last frozen server
+#   TALKTOME_NOTCH=1 sh packaging/build-app.sh  also build the notch helper
 #
 # The awkward half is the Python. A bundle has no virtual environment and no
 # checkout, so the server is frozen into a binary first and copied in. Freezing takes
@@ -55,14 +56,20 @@ rm -rf "$PROBE"
 echo "==> drawing the TalkToMe app icon"
 node scripts/make-app-icon.mjs
 
-echo "==> building the native notch glow"
+# The native notch is off in the app (NATIVE_NOTCH in desktop/main.cjs), so the
+# helper is built only on request. electron-builder skips a missing folder, and
+# an old build is removed so a release never ships it by accident.
 NOTCH_APP=dist/native/NotchSurface.app
-mkdir -p "$NOTCH_APP/Contents/MacOS"
-# swiftc targets this Mac's macOS by default, and then the helper does not start on
-# an older one. Keep this the same as minimumSystemVersion in package.json.
-xcrun swiftc -O -target arm64-apple-macos14.0 native/NotchGlow.swift -o "$NOTCH_APP/Contents/MacOS/NotchSurface"
-VERSION=$(node -p "require('./package.json').version")
-cat > "$NOTCH_APP/Contents/Info.plist" <<PLIST
+if [ "${TALKTOME_NOTCH:-0}" != "1" ]; then
+  rm -rf "$NOTCH_APP"
+else
+  echo "==> building the native notch glow"
+  mkdir -p "$NOTCH_APP/Contents/MacOS"
+  # swiftc targets this Mac's macOS by default, and then the helper does not start on
+  # an older one. Keep this the same as minimumSystemVersion in package.json.
+  xcrun swiftc -O -target arm64-apple-macos14.0 native/NotchGlow.swift -o "$NOTCH_APP/Contents/MacOS/NotchSurface"
+  VERSION=$(node -p "require('./package.json').version")
+  cat > "$NOTCH_APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -76,6 +83,7 @@ cat > "$NOTCH_APP/Contents/Info.plist" <<PLIST
   <key>LSUIElement</key><true/>
 </dict></plist>
 PLIST
+fi
 
 echo "==> building the bundle and the disk image"
 npx electron-builder --mac --publish never

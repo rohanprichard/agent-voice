@@ -70,9 +70,10 @@ to the server. The final setup button closes setup.
    not — Codex's sandbox permits its workspace and the temporary folder and nothing
    else. This is why the path works at all: the sandbox blocks connections to
    `127.0.0.1` *and* writes outside those two places.
-3. The pill appears at the bottom of the screen showing a bell, the name, and one
-   button to answer. It rings for ten seconds and then stops on its own; there is no
-   decline control. The greeting is heard only once you answer.
+3. The pill appears at the bottom of the screen showing a bell, the name, and two
+   buttons: Decline and Answer. A macOS notification also shows the name. It rings
+   for 30 seconds and then stops on its own. The greeting audio is made while it
+   rings, and it plays once you answer.
 4. You speak. The app delivers it into the thread with `codex queue` and reads the
    agent's reply out of the thread's rollout file. Both threads in the pill follow
    who is talking.

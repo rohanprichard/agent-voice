@@ -3,10 +3,10 @@ import { agentNames } from "./onboarding-steps.js";
 import { AudioQueue, currentAudioEvent } from "./playback.js";
 import { WebAudioPlayer } from "./player.js";
 import { RealtimeInput, supportsRealtimeRate } from "./realtime-input.js";
+import { applyEvent, followStream } from "./stream.js";
 
 const $ = (id) => document.getElementById(id);
 let state = { room: { messages: [] }, speech: {} };
-let cursor = 0;
 let paired = false;
 let microphone = null;
 let realtimeInput = null;
@@ -20,6 +20,13 @@ let firstAudioTurn = null;
 let firstScheduledTurn = null;
 let interruptionCandidate = null;
 let turnSettingsBusy = false;
+// A problem the user must see during a call. The Settings window is hidden
+// then, so it goes to the call surface with at most one action.
+let callAlert = null;
+let dismissedError = null;
+// Speech that ended while the last utterance was still transcribing. It is sent
+// next, so nothing the user says in that time is lost.
+const heldAudio = [];
 
 function capturePlayback() {
   return {
@@ -47,7 +54,7 @@ function resumeFalseInterruption() {
 // which an <audio> element cannot offer.
 const player = new WebAudioPlayer({
   onError: () =>
-    notice("The reply audio did not play. The text is in the conversation."),
+    callProblem("The reply audio did not play. The text is in the transcript."),
   onIdle: () => syncPlayback(),
 });
 const audioQueue = new AudioQueue(
@@ -150,6 +157,21 @@ $("open-microphone-settings").addEventListener("click", () =>
 function notice(message) {
   $("notice-text").textContent = message;
   $("notice").classList.remove("hidden");
+}
+
+// action: "retry-mic", "mic-settings", or "settings". The call surface shows
+// the matching button.
+function callProblem(message, action = null) {
+  notice(message);
+  if (!state.room.call_id) return;
+  callAlert = { text: message, action };
+  render();
+}
+
+function clearCallProblem(action) {
+  if (!callAlert || (action !== undefined && callAlert.action !== action)) return;
+  callAlert = null;
+  render();
 }
 
 async function api(path, options = {}) {
@@ -308,8 +330,8 @@ function skillState(report) {
   return "Adds the skill and the talktome command";
 }
 
-// The server writes the script first, and the main process copies it into
-// /usr/local/bin after the macOS administrator prompt.
+// The server tries a normal install first. The main process then writes its own
+// copy of the script into /usr/local/bin after the macOS administrator prompt.
 async function installForAllUsers() {
   agentBusy = true;
   renderAgents();
@@ -607,8 +629,8 @@ async function startMicrophone() {
     onError: (message) => {
       stopRealtimeInput();
       resumeFalseInterruption();
-      microphone = null;
-      notice(message);
+      if (microphone === mic) microphone = null;
+      callProblem(message, "retry-mic");
       render();
     },
   });
@@ -617,18 +639,26 @@ async function startMicrophone() {
     microphone = mic;
     microphonePermission = "granted";
     mic.setAssistantSpeaking(speaking);
-    mic.setPaused(transcribing);
+    pauseCapture();
     startRealtimeInput(mic);
+    clearCallProblem("retry-mic");
+    clearCallProblem("mic-settings");
     await listMicrophones();
   } catch (error) {
-    if (error.name === "NotAllowedError") microphonePermission = "denied";
-    const message =
-      error.name === "NotAllowedError"
-        ? "Microphone access is off. Allow microphone access in system settings, then enable it again."
-        : `The microphone did not start. ${error.message}`;
-    notice(message);
+    if (error.name === "NotAllowedError") {
+      microphonePermission = "denied";
+      callProblem("Microphone access is off. Allow it in System Settings.", "mic-settings");
+    } else {
+      callProblem(`The microphone did not start. ${error.message}`, "retry-mic");
+    }
   }
   render();
+}
+
+// Realtime input keeps one open utterance, so capture pauses while it commits.
+// The file path can hold the next utterance and send it after this one.
+function pauseCapture() {
+  microphone?.setPaused(transcribing && Boolean(realtimeInput));
 }
 
 async function checkSpeechTurn(audio, signal) {
@@ -655,11 +685,15 @@ async function checkSpeechTurn(audio, signal) {
 }
 
 async function sendAudio(blob, timing = {}) {
-  if (transcribing || !state.room.call_id) return;
+  if (!state.room.call_id) return;
+  if (transcribing) {
+    if (heldAudio.length < 3) heldAudio.push([blob, timing]);
+    return;
+  }
   const callId = state.room.call_id;
   const interruption = interruptionCandidate;
   transcribing = true;
-  microphone?.setPaused(true);
+  pauseCapture();
   render();
   try {
     let text = "";
@@ -722,16 +756,20 @@ async function sendAudio(blob, timing = {}) {
         notice("No speech was detected. Speak closer to the microphone.");
     }
     if (interruption && !committed) resumeFalseInterruption();
-    await refresh();
+    clearCallProblem("settings");
+    clearCallProblem(null);
   } catch (error) {
     resumeFalseInterruption();
-    notice(error.message);
+    callProblem(error.message, /speech model|Settings/.test(error.message) ? "settings" : null);
   } finally {
     showPartial("");
     transcribing = false;
-    microphone?.setPaused(false);
+    pauseCapture();
     render();
   }
+  const next = heldAudio.shift();
+  if (next && state.room.call_id === callId) void sendAudio(...next);
+  else heldAudio.length = 0;
 }
 
 function stopPlayback() {
@@ -749,7 +787,7 @@ function stopCurrentPlayback() {
 function syncPlayback() {
   speaking = playbackRequests > 0 || player.playing;
   microphone?.setAssistantSpeaking(speaking);
-  microphone?.setPaused(transcribing);
+  pauseCapture();
   render();
 }
 
@@ -795,7 +833,7 @@ async function playAudio(source, event = null) {
     }
   } catch (error) {
     if (epoch === playbackEpoch) {
-      notice(`The reply audio did not play. ${error.message}`);
+      callProblem(`The reply audio did not play. ${error.message}`);
     }
   } finally {
     if (epoch === playbackEpoch) {
@@ -805,60 +843,56 @@ async function playAudio(source, event = null) {
   }
 }
 
+function callChanged(previousCall) {
+  if (!previousCall || previousCall === state.room.call_id) return;
+  microphone?.stop();
+  microphone = null;
+  stopRealtimeInput();
+  stopPlayback();
+  callAlert = null;
+  heldAudio.length = 0;
+}
+
 async function refresh() {
   const next = await api("/state");
-  if (state.room.call_id && state.room.call_id !== next.room.call_id) {
-    microphone?.stop();
-    microphone = null;
-    stopRealtimeInput();
-    stopPlayback();
-  }
+  const previousCall = state.room.call_id;
   state = next;
+  callChanged(previousCall);
   if (state.speech.stt_provider !== "elevenlabs" && realtimeInput) stopRealtimeInput();
   render();
 }
 
-async function poll() {
-  while (paired) {
-    try {
-      const result = await api(`/events?after=${cursor}&timeout=25`);
-      cursor = result.seq;
+// The one live view of the server. Reply deltas change only the transcript,
+// which this window does not draw, so they skip the render.
+function startStream() {
+  followStream({
+    onSnapshot: (next) => {
       const previousCall = state.room.call_id;
-      state.room = result.room;
-      state.speech = result.speech;
-      state.managed = result.managed;
+      state = { ...state, ...next };
+      callChanged(previousCall);
       if (state.speech.stt_provider !== "elevenlabs" && realtimeInput) stopRealtimeInput();
-      if (previousCall && previousCall !== state.room.call_id) {
-        microphone?.stop();
-        microphone = null;
-        stopRealtimeInput();
-        stopPlayback();
-      }
-      for (const event of result.events) {
-        if (
-          [
-            "user.utterance",
-            "agent.interrupted",
-            "call.ended",
-          ].includes(event.type)
-        )
-          stopPlayback();
-        if (
-          ["agent.reply", "agent.audio"].includes(event.type) &&
-          !result.reset &&
-          currentAudioEvent(event, state.room)
-        ) {
-          audioQueue.enqueue(event);
-        }
-      }
       render();
-    } catch {
-      notice(
-        "The local connection stopped. TalkToMe will try to connect again.",
-      );
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-    }
-  }
+    },
+    onEvent: ({ event, room, managed }) => {
+      const previousCall = state.room.call_id;
+      applyEvent(state.room, event);
+      if (room) Object.assign(state.room, room);
+      if (managed) state.managed = managed;
+      callChanged(previousCall);
+      if (["user.utterance", "agent.interrupted", "call.ended"].includes(event.type))
+        stopPlayback();
+      if (["agent.reply", "agent.audio"].includes(event.type) && currentAudioEvent(event, state.room))
+        audioQueue.enqueue(event);
+      if (event.type !== "message.delta") render();
+    },
+    onSpeech: (speech) => {
+      state.speech = speech;
+      if (state.speech.stt_provider !== "elevenlabs" && realtimeInput) stopRealtimeInput();
+      render();
+    },
+    onLost: () => callProblem("The local connection stopped. TalkToMe tries to connect again."),
+    onOpen: () => clearCallProblem(null),
+  });
 }
 
 async function initialize(token) {
@@ -866,7 +900,6 @@ async function initialize(token) {
   await refresh();
   await readMicrophonePermission().catch(() => {});
   paired = true;
-  cursor = state.room.seq;
   const savedStage = localStorage.getItem("talktome-onboarding");
   onboarding =
     savedStage === "complete" || state.room.call_id
@@ -879,7 +912,7 @@ async function initialize(token) {
   window.talktomeDesktop?.setOnboarding?.(Boolean(onboarding));
   navigate("setup");
   await loadSettings();
-  void poll();
+  startStream();
 }
 
 $("theme-select").value =
@@ -939,8 +972,35 @@ async function endCall() {
   microphone = null;
   stopRealtimeInput();
   stopPlayback();
+  callAlert = null;
+  heldAudio.length = 0;
   await post("/call/end", { call_id: callId });
 }
+
+async function retryMicrophone() {
+  if (!state.room.call_id) return;
+  const muted = Boolean(microphone?.muted);
+  microphone?.stop();
+  microphone = null;
+  stopRealtimeInput();
+  await startMicrophone();
+  if (muted && microphone) {
+    microphone.setMuted(true);
+    stopRealtimeInput();
+    render();
+  }
+}
+
+// The Mac woke up. The microphone and both ElevenLabs sockets can be dead with
+// no error, so each one starts again. A microphone that does not come back
+// shows on the pill with Retry mic.
+async function resumeAfterSleep() {
+  await refresh().catch(() => {});
+  if (!state.room.call_id) return;
+  await post("/call/resume", { call_id: state.room.call_id }).catch(() => {});
+  await retryMicrophone();
+}
+window.talktomeDesktop?.onResume?.(() => void resumeAfterSleep());
 
 // The floating call surface lives in its own window and cannot touch the
 // microphone, the audio queue, or the agent session. This window owns all three,
@@ -952,6 +1012,11 @@ function reportDesktopCallState(active) {
   // A ringing call has no call id yet, but the surface has to be on screen: it is
   // where the question is asked.
   const ring = state.managed?.status === "ringing" ? state.managed.ring : null;
+  const managed = active ? state.managed || {} : {};
+  // A turn that failed, or a voice that stopped, is reported by the server.
+  const serverAlert = managed.error && managed.error !== dismissedError
+    ? { text: managed.error, action: null }
+    : null;
   const next = {
     live: Boolean(active || ring),
     callId: state.room.call_id || null,
@@ -968,6 +1033,11 @@ function reportDesktopCallState(active) {
     agentActive: Boolean(active && speaking),
     thinking: Boolean(active && (transcribing || (state.room.turn_id && !state.room.answered)) && !recording && !speaking),
     partial: active ? partialTranscript : "",
+    transcribing: Boolean(active && transcribing),
+    working: ["working", "approval"].includes(managed.status),
+    tool: managed.tool || "",
+    approval: Boolean(managed.approvals?.length),
+    alert: active ? callAlert || serverAlert : null,
   };
   // render() runs on every refresh, and this crosses a process boundary, so stop
   // when nothing changed.
@@ -986,7 +1056,20 @@ window.talktomeDesktop?.onCallCommand?.((type) => {
   else if (type === "end") void endCall();
   else if (type === "accept") void answerRing();
   else if (type === "decline") void declineRing();
+  else if (type === "retry-mic") void retryMicrophone();
+  else if (type === "dismiss") {
+    dismissedError = state.managed?.error || null;
+    callAlert = null;
+    render();
+  }
+  else if (type === "callback") void joinCallBack();
 });
+
+// A call back starts live with no ring to answer, so start the microphone here.
+async function joinCallBack() {
+  await refresh();
+  if (state.room.call_id && !microphone) await startMicrophone();
+}
 
 async function declineRing() {
   try {
@@ -1005,7 +1088,7 @@ async function answerRing() {
     await refresh();
     if (state.room.call_id) await startMicrophone();
   } catch (error) {
-    notice(error.message);
+    callProblem(error.message);
   }
   await refresh();
 }
@@ -1196,9 +1279,6 @@ window.talktomeDesktop?.onOnboardingComplete?.(() => {
   if (onboarding) onboardingStage("complete");
 });
 
-setInterval(() => {
-  if (paired) void refresh().catch(() => {});
-}, 2000);
 window.addEventListener("beforeunload", () => {
   microphone?.stop();
   stopRealtimeInput();

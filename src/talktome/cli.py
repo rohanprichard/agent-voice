@@ -26,9 +26,9 @@ from .config import announce_server, base_url, data_dir, get_token, server_up
 WAKE_TIMEOUT = 25
 
 # How long to wait for the app to answer a request. A call is not answered until
-# the ring is, and a ring lasts about ten seconds, so this covers the wait at the
-# far end as well as the round trip.
-REQUEST_TIMEOUT = 40
+# the ring is, and a ring lasts 30 seconds, so this covers the wait at the far end
+# (ANSWER_WAIT in managed.py) as well as the round trip.
+REQUEST_TIMEOUT = 45
 
 
 def running(timeout=2):

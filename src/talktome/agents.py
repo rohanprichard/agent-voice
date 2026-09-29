@@ -90,9 +90,6 @@ COMMAND_DIRS = ("~/.local/bin", "/opt/homebrew/bin", "/usr/local/bin")
 # Mac without Homebrew it is on PATH through /etc/paths but belongs to root.
 SYSTEM_COMMAND_DIR = "/usr/local/bin"
 
-# The copy the desktop app puts into SYSTEM_COMMAND_DIR, written here first so the
-# script always comes from this module.
-STAGED_COMMAND = "talktome-command"
 
 APP_ID = "com.rohanprichard.talktome"
 SERVER_IN_APP = "Contents/Resources/talktome-server/talktome-server"
@@ -215,7 +212,8 @@ def command_script(python: str, launcher: str | None = None, apps=APP_FOLDERS) -
             # that can only reach the user while the app is already open is not
             # much of a reach, and only the app knows how it wants to be started.
             lines.append(f"export TALKTOME_LAUNCH={shlex.quote(launcher)}")
-        lines.append(f'exec "{python}" -m talktome "$@"')
+        # Quoted for the shell, so a path with `$`, `"`, or a space still runs.
+        lines.append(f'exec {shlex.quote(python)} -m talktome "$@"')
         return "\n".join(lines) + "\n"
     folders = " ".join(f'"{folder}"' for folder in apps)
     lines += [
@@ -257,12 +255,8 @@ def install_command(
     script = command_script(python, launcher)
     directories = [directory for directory in on_path if writable(directory)]
     if not directories and Path(SYSTEM_COMMAND_DIR) in on_path:
-        # Staged for the desktop app, which copies it after an administrator prompt.
-        from .config import data_dir
-
-        staged = data_dir() / STAGED_COMMAND
-        staged.write_text(script, encoding="utf-8")
-        staged.chmod(0o600)
+        # The desktop app writes the same script there after an administrator
+        # prompt. commandScript in desktop/install.cjs builds it.
         raise ValueError(
             f"Your shell only searches {SYSTEM_COMMAND_DIR}, and that folder needs an "
             "administrator. Choose Install for all users, or add this line to "
@@ -331,16 +325,16 @@ def command_installed(home: Path, python: str, path_env: str | None = None) -> b
         # Only the form that looks the app up counts. An older shim holds the
         # path of one copy of the app, and it breaks when that copy moves.
         return APP_ID in text and SERVER_IN_APP in text
-    marker = f'exec "{python}"'
-    if marker in text:
-        return True
     # The shim records an interpreter path, and the same interpreter is spelled
     # `python` or `python3` depending on how it was invoked, so the recorded path
     # is resolved rather than compared as text.
     for line in text.splitlines():
         if line.startswith("exec "):
-            recorded = line[5:].split(" -m ")[0].strip().strip('"')
-            return same_python(recorded, python)
+            try:
+                recorded = shlex.split(line)[1]
+            except (ValueError, IndexError):
+                return False
+            return recorded == python or same_python(recorded, python)
     return False
 
 

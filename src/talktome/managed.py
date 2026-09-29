@@ -19,15 +19,15 @@ from .streaming import ElevenLabsConnection, ElevenLabsStream
 
 logger = logging.getLogger(__name__)
 
-# How long a call rings before it gives up. There is no way to dismiss a ring by
-# hand: the only answer is to take the call, so this is the whole of the window a
-# user has to notice it, decide, and reach the pill.
-RING_TIMEOUT = 10
+# How long a call rings before it gives up. The user can answer or decline on the
+# pill, from the notification, or in the menu bar. RING_GUARD_MS in call.js and
+# REQUEST_TIMEOUT in cli.py follow this value.
+RING_TIMEOUT = 30
 
 # How long a caller waits for a ring to be taken. The ring gives up first; this is
 # that plus room for the status to settle, so a ring that ended is never reported
 # as one that is still going.
-ANSWER_WAIT = 15
+ANSWER_WAIT = RING_TIMEOUT + 5
 
 # A Codex id goes into a file search, so it keeps a strict pattern: `*` would
 # follow whichever session happened to sort last.
@@ -123,8 +123,13 @@ class SentenceBuffer:
 
 
 class ManagedSession:
-    def __init__(self, room, synthesize, cache_audio, open_stream=None, warm_stream=None):
+    def __init__(
+        self, room, synthesize, cache_audio, open_stream=None, warm_stream=None, speech_problem=None,
+    ):
         self.room = room
+        # Returns a reason when speech cannot work, so a call is refused before it
+        # rings instead of ringing into a call that cannot hear or speak.
+        self.speech_problem = speech_problem
         self.synthesize = synthesize
         self.cache_audio = cache_audio
         self.open_stream = open_stream
@@ -136,6 +141,7 @@ class ManagedSession:
         self.speaker = None
         self.ring = None
         self.ringer = None
+        self.greeting_audio = None
         self.audio_queue = asyncio.Queue(maxsize=64)
         self.lock = asyncio.Lock()
         self.approvals = {}
@@ -146,6 +152,12 @@ class ManagedSession:
         self.generation = 0
         self.voice_connection = None
         self.voice_warmup = None
+        # Set by the app to keep the call history.
+        self.history = None
+
+    def _record(self, event, options=None):
+        if self.history:
+            self.history.record(event, self, options)
 
     def snapshot(self):
         return {
@@ -192,6 +204,9 @@ class ManagedSession:
         """
         if not valid_session_id(thread_id, agent):
             raise HTTPException(400, "That session id is not valid.")
+        problem = self.speech_problem() if self.speech_problem else None
+        if problem:
+            raise HTTPException(409, problem)
         async with self.lock:
             directory = self._project(cwd)
             if agent not in {"codex", "claude", "hermes", "openclaw", "generic"}:
@@ -224,9 +239,25 @@ class ManagedSession:
             )
             self.ring = {"id": str(uuid4()), "name": caller, "greeting": greeting or ""}
             self.status = "ringing"
+            # Made while it rings, so the first words play as soon as the user answers.
+            if greeting:
+                self.greeting_audio = asyncio.create_task(self._prepare_greeting(greeting))
+            self._record("ringing")
             await self.changed()
             self.ringer = asyncio.create_task(self._ring_until_answered(self.ring))
             return self.snapshot()
+
+    async def _prepare_greeting(self, text):
+        try:
+            return await self.synthesize(text)
+        except Exception:
+            logger.exception("The greeting could not be prepared while the call rang.")
+            return None
+
+    def _drop_greeting(self):
+        if self.greeting_audio:
+            self.greeting_audio.cancel()
+            self.greeting_audio = None
 
     async def accept(self, ring_id=None):
         """Take the call. The greeting is what the user hears first."""
@@ -235,11 +266,15 @@ class ManagedSession:
             if not ring or (ring_id and ring_id != ring["id"]):
                 raise HTTPException(409, "That call is no longer ringing.")
             self._stop_ringer()
+            # Ready before the ring clears, so `answered` never sees a taken call
+            # with the ringing status.
+            self.status = "ready"
             self.ring = None
             await self.room.start()
+            self._record("answered")
             if ring["greeting"]:
-                await self.greet(ring["greeting"])
-            self.status = "ready"
+                await self.greet(ring["greeting"], self.greeting_audio)
+            self.greeting_audio = None
             await self.changed()
             return self.snapshot()
 
@@ -250,7 +285,9 @@ class ManagedSession:
             if not ring or (ring_id and ring_id != ring["id"]):
                 raise HTTPException(409, "That call is no longer ringing.")
             self._stop_ringer()
+            self._drop_greeting()
             self.ring = None
+            self._record("declined")
             await self._release()
             self.status = "idle"
             await self.changed()
@@ -342,31 +379,49 @@ class ManagedSession:
             return
         # Only if this is still the ring that was pending when the wait began.
         if self.ring and self.ring["id"] == ring["id"]:
+            self._record("missed")
             with contextlib.suppress(HTTPException):
                 await self.decline(ring["id"])
 
     async def _release(self):
-        """Let go of an attached session without touching its room state."""
-        await self._cancel()
-        if self.voice_warmup:
-            self.voice_warmup.cancel()
+        """Let go of an attached session without touching its room state.
+
+        `close` holds the session lock while this runs, so no step may wait on
+        speech, and one failed step must not leave the others undone.
+        """
+        # Read before the fields below are cleared.
+        self._record("ended")
+        voice_warmup, self.voice_warmup = self.voice_warmup, None
+        voice_connection, self.voice_connection = self.voice_connection, None
+        adapter, self.adapter = self.adapter, None
+        speaker, self.speaker = self.speaker, None
+
+        async def stop(task):
+            task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
-                await self.voice_warmup
-            self.voice_warmup = None
-        if self.voice_connection:
-            await self.voice_connection.close()
-            self.voice_connection = None
-        if self.adapter:
-            await self.adapter.close()
-        self.adapter = None
-        if self.speaker:
-            await self.audio_queue.put(None)
-            await self.speaker
-            self.speaker = None
-        if self.room.agent and self.room.agent["client_id"] == self.client_id:
-            await self.room.disconnect()
-        self.client_id = None
-        self.options = None
+                await task
+
+        steps = [self._cancel]
+        if voice_warmup:
+            steps.append(lambda: stop(voice_warmup))
+        if voice_connection:
+            steps.append(voice_connection.close)
+        if adapter:
+            steps.append(adapter.close)
+        # A sentence can take a long time to synthesize. It is dropped, not waited for.
+        if speaker:
+            steps.append(lambda: stop(speaker))
+        for step in steps:
+            try:
+                await step()
+            except Exception:
+                logger.exception("A step of the call teardown failed.")
+        try:
+            if self.room.agent and self.room.agent["client_id"] == self.client_id:
+                await self.room.disconnect()
+        finally:
+            self.client_id = None
+            self.options = None
 
     def _project(self, cwd):
         directory = Path(cwd).expanduser().resolve()
@@ -388,6 +443,7 @@ class ManagedSession:
             await adapter.close()
             self.status = "error"
             self.error = str(exc)
+            self._record("failed", options)
             await self.changed()
             raise HTTPException(400, str(exc)) from exc
         self.adapter = adapter
@@ -400,7 +456,7 @@ class ManagedSession:
         await self.changed()
         return self.snapshot()
 
-    async def greet(self, text):
+    async def greet(self, text, audio=None):
         """Speak a line the agent supplied, before the user says anything."""
         event = {
             "call_id": self.room.call_id,
@@ -409,8 +465,11 @@ class ManagedSession:
             "text": "",
             "time": datetime.now(UTC).isoformat(),
         }
-        await self.room.emit("agent.greeting", text=text)
         item_id = f"greeting-{uuid4()}"
+        await self.room.emit(
+            "agent.greeting", text=text, item_id=item_id, turn_id=event["turn_id"],
+            name=self.room.agent["name"], kind="greeting",
+        )
         message = {
             "role": "agent",
             "name": self.room.agent["name"],
@@ -422,7 +481,7 @@ class ManagedSession:
             "time": event["time"],
         }
         self.room.messages.append(message)
-        self.audio_queue.put_nowait((event, self.generation, text))
+        self.audio_queue.put_nowait((event, self.generation, text, audio))
         return message
 
     async def _cancel(self):
@@ -436,14 +495,39 @@ class ManagedSession:
                 await self.task
         self.task = None
         while not self.audio_queue.empty():
-            self.audio_queue.get_nowait()
+            entry = self.audio_queue.get_nowait()
+            if entry and entry[3]:
+                entry[3].cancel()
         self.tool = None
+
+    async def resume(self):
+        """Open the voice socket again after the computer slept.
+
+        A socket from before sleep can look open and be dead, and the next reply
+        would then wait on it.
+        """
+        async with self.lock:
+            if self.voice_connection is None and self.voice_warmup is None:
+                return
+            warmup, self.voice_warmup = self.voice_warmup, None
+            connection, self.voice_connection = self.voice_connection, None
+            if warmup:
+                warmup.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await warmup
+            if connection:
+                with contextlib.suppress(Exception):
+                    await connection.close()
+            if self.adapter and self.warm_stream:
+                self.voice_warmup = asyncio.create_task(self._prepare_voice())
 
     async def interrupt(self, revision=None):
         async with self.lock:
             if revision is not None and revision != self.room.revision:
                 return
             await self._cancel()
+            if hasattr(self.adapter, "stop_speaking"):
+                self.adapter.stop_speaking()
             if self.adapter:
                 self.status = "ready"
             await self.changed()
@@ -454,6 +538,7 @@ class ManagedSession:
                 # A later call took over while this one waited. Do not release it.
                 return self.snapshot()
             self._stop_ringer()
+            self._drop_greeting()
             self.ring = None
             await self._release()
             self.error = None
@@ -612,7 +697,7 @@ class ManagedSession:
                         self.error = "The voice stopped before the message ended. The text is in the transcript."
                         await self.changed()
                 else:
-                    self.audio_queue.put_nowait((event, generation, sentence))
+                    self.audio_queue.put_nowait((event, generation, sentence, None))
 
         async def speak():
             nonlocal stream, streaming_available
@@ -673,6 +758,9 @@ class ManagedSession:
                 return
             if event_type == "turn.accepted":
                 self.room.mark_timing(event["turn_id"], "accepted_ms", time.time_ns() / 1_000_000)
+                if self.tool:
+                    self.tool = None
+                    await self.changed()
                 return
             if event_type.startswith("message."):
                 item_id = data["item_id"]
@@ -707,15 +795,25 @@ class ManagedSession:
                     completed.add(item_id)
                 message["kind"] = data.get("kind", "message")
                 if message["text"].strip():
+                    # The last tool line stays on the pill until the agent says something.
+                    if self.tool:
+                        self.tool = None
+                        await self.changed()
                     self.room.mark_timing(
                         event["turn_id"], "first_message_ms", time.time_ns() / 1_000_000
                     )
-                update = await self.room.emit(event_type, turn_id=event["turn_id"], item_id=item_id)
+                # The event carries the new text, so a client can follow the
+                # reply without reading the whole room again.
+                update = await self.room.emit(
+                    event_type, turn_id=event["turn_id"], item_id=item_id,
+                    text=added if event_type == "message.delta" else message["text"],
+                    kind=message["kind"], name=message["name"],
+                )
                 message["seq"] = update["seq"]
                 if added or event_type == "message.done":
                     enqueue_speech(item_id, added, event_type == "message.done")
             elif event_type == "tool.status":
-                self.tool = data["text"] if data.get("status") == "active" else None
+                self.tool = data.get("text") or None
                 await self.changed()
             elif event_type == "usage":
                 self.usage = data["usage"]
@@ -773,12 +871,14 @@ class ManagedSession:
             entry = await self.audio_queue.get()
             if entry is None:
                 return
-            event, generation, text = entry
+            event, generation, text, prepared = entry
             if not self.current(event, generation):
+                if prepared:
+                    prepared.cancel()
                 continue
             playback_epoch = self.room.revision
             try:
-                audio = await self.synthesize(text)
+                audio = (await prepared if prepared else None) or await self.synthesize(text)
                 if self.current(event, generation):
                     audio_id = self.cache_audio(audio)
                     await self.room.audio(

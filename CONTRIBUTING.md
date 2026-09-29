@@ -57,12 +57,22 @@ If the repository variable `PUBLISH_PYPI` is `true`, the workflow also publishes
 - Comments: explain why, not what. Remove a comment that only repeats the code.
 - Documentation: write short, active sentences. Use one term for one thing.
 
+## The notch surface
+
+The native notch surface is off until its design is ready. The call uses the pill at the placement that the user selects.
+The Swift code stays in `native/`. To work on it:
+
+1. Set `NATIVE_NOTCH` to `true` in `desktop/main.cjs`.
+2. Run `TALKTOME_NOTCH=1 npm run build:app` to build the helper and the app. For a quick look at the helper alone, run `npm run build:notch-preview`.
+
+Do not commit `NATIVE_NOTCH = true`.
+
 ## Where things are
 
 | Path | Contents |
 | --- | --- |
 | `desktop/` | Electron main process and preload scripts |
-| `native/` | The Swift notch surface |
+| `native/` | The Swift notch surface. It is off in the app. |
 | `src/talktome/` | The local server, speech, and agent adapters |
 | `src/talktome/static/` | The onboarding, settings, and call pages |
 | `src/talktome/remote/` | The experimental remote bridge |

@@ -9,10 +9,12 @@ const {
   Tray,
   nativeImage,
   nativeTheme,
+  Notification,
+  powerMonitor,
   screen,
   shell,
 } = require("electron");
-const { execFile, spawn, spawnSync } = require("node:child_process");
+const { execFile, spawn } = require("node:child_process");
 const {
   readFileSync,
   mkdirSync,
@@ -34,10 +36,11 @@ const { computeVisibility } = require("./lifecycle.cjs");
 const {
   SETTINGS_PANES,
   adminInstallArgs,
+  commandScript,
   loginItemState,
   shouldOfferMove,
-  validCommandScript,
 } = require("./install.cjs");
+const { createCalls } = require("./calls.cjs");
 
 app.setName("talktome");
 if (process.env.TALKTOME_DATA_DIR) {
@@ -50,6 +53,8 @@ const root = path.resolve(__dirname, "..");
 // steps out of the way. Setting TALKTOME_FLOATING_CALL=0 turns off the call
 // window.
 const floatingCall = process.env.TALKTOME_FLOATING_CALL !== "0";
+// The native notch surface stays off until its experience is designed.
+const NATIVE_NOTCH = false;
 let backend;
 let notchGlow;
 let nativeNotch = false;
@@ -96,10 +101,74 @@ let callAnchor = null;
 // drag and turned into an anchor.
 let appliedBounds = null;
 let tray;
-let callState = { live: false, muted: false, state: "idle" };
+let callState = readCallState({});
 let quitting = false;
 let shutdownStarted = false;
 let backendLog = "";
+// A server that stops is started again this many times, with a longer wait
+// each time, before the app gives up and says so.
+const BACKEND_RESTARTS = 3;
+let backendRestarts = 0;
+let backendStartedAt = 0;
+let restartingBackend = false;
+
+// The actions a problem on the call surface can offer.
+const ALERT_ACTIONS = ["retry-mic", "mic-settings", "settings"];
+
+/**
+ * The one place the call state is built. The hidden window owns the call and
+ * reports it; every field the surface reads has to be copied here, or it never
+ * arrives.
+ */
+function readCallState(next) {
+  const alert = next.alert && typeof next.alert === "object" && typeof next.alert.text === "string"
+    ? {
+        text: next.alert.text.slice(0, 300),
+        action: ALERT_ACTIONS.includes(next.alert.action) ? next.alert.action : null,
+      }
+    : null;
+  return {
+    live: Boolean(next.live),
+    callId: typeof next.callId === "string" ? next.callId : null,
+    startedAt: typeof next.startedAt === "string" ? next.startedAt : null,
+    muted: Boolean(next.muted),
+    state: typeof next.state === "string" ? next.state : "idle",
+    name: typeof next.name === "string" ? next.name.slice(0, 80) : "TalkToMe",
+    userActive: Boolean(next.userActive),
+    agentActive: Boolean(next.agentActive),
+    thinking: Boolean(next.thinking),
+    transcribing: Boolean(next.transcribing),
+    working: Boolean(next.working),
+    tool: typeof next.tool === "string" ? next.tool.slice(0, 200) : "",
+    approval: Boolean(next.approval),
+    alert,
+    partial: typeof next.partial === "string" ? next.partial.slice(0, 6000) : "",
+    ring: next.ring && typeof next.ring === "object"
+      ? { id: String(next.ring.id || ""), name: String(next.ring.name || "") }
+      : null,
+  };
+}
+
+// A macOS notification for the ring, so a call is seen even when the pill is
+// behind a full-screen app. The ring has its own tone, so the notification is
+// silent. Clicking it brings the ring forward.
+let ringNotice = null;
+let noticedRing = null;
+function notifyRing() {
+  const ring = callState.state === "ringing" ? callState.ring : null;
+  if ((ring?.id || null) === noticedRing) return;
+  noticedRing = ring?.id || null;
+  ringNotice?.close();
+  ringNotice = null;
+  if (!ring || !Notification.isSupported()) return;
+  ringNotice = new Notification({
+    title: ring.name || "A session",
+    body: "wants to talk. Answer or decline on the call pill.",
+    silent: true,
+  });
+  ringNotice.on("click", () => restoreCallWindow(callToken));
+  ringNotice.show();
+}
 
 function glowMode() {
   if (callState.ring) return "ringing";
@@ -125,15 +194,21 @@ function updateNotchGlow() {
   })}\n`);
 }
 
-function startNotchGlow() {
-  if (process.platform !== "darwin") return;
+async function startNotchGlow() {
+  // An old build of the helper can still be on disk, so the switch is checked
+  // before the file is.
+  if (!NATIVE_NOTCH || process.platform !== "darwin") return;
   const binary = app.isPackaged
     ? path.join(process.resourcesPath, "notch-surface", "NotchSurface.app", "Contents", "MacOS", "NotchSurface")
     : path.join(root, "dist", "native", "NotchSurface.app", "Contents", "MacOS", "NotchSurface");
   if (!existsSync(binary)) return;
-  const measured = spawnSync(binary, ["--geometry"], { encoding: "utf8", timeout: 2000 });
+  // Asked without blocking, so a slow helper does not hold up the app start.
   try {
-    nativeGeometry = JSON.parse(measured.stdout);
+    const measured = await new Promise((resolve, reject) => {
+      execFile(binary, ["--geometry"], { encoding: "utf8", timeout: 2000 }, (error, stdout) =>
+        error ? reject(error) : resolve(stdout));
+    });
+    nativeGeometry = JSON.parse(measured);
     if (!Number.isFinite(nativeGeometry.notchDepth) || nativeGeometry.notchDepth <= 0)
       return;
   } catch { return; }
@@ -217,6 +292,14 @@ if (!app.requestSingleInstanceLock()) app.quit();
 
 app.on("second-instance", () => {
   openSettings();
+});
+
+const calls = createCalls({
+  electron: require("electron"),
+  origin,
+  trusted,
+  onCallBack: () => sendToWindow("talktome:call-command", "callback"),
+  refreshTray: () => refreshTrayMenu(),
 });
 
 function trusted(url) {
@@ -526,6 +609,8 @@ function refreshTrayMenu() {
         label: "Open Settings",
         click: openSettings,
       },
+      ...calls.menuItems(),
+      { type: "separator" },
       {
         label: nativeNotch ? "Open transcript" : "Show call",
         enabled: callState.live && !callState.ring,
@@ -619,16 +704,12 @@ function loginItem() {
   });
 }
 
-// agents.py stages the script when /usr/local/bin is the only folder for it.
-// A fresh private copy is installed, so the file cannot change after the check.
+// The script is built here from what this process started the server with, and
+// written to a private folder. The copy agents.py stages in the data folder is
+// never read: any process of this user can change that file before the
+// administrator prompt.
 async function installCommandForAllUsers() {
-  let text;
-  try {
-    text = readFileSync(path.join(dataDirectory(), "talktome-command"), "utf8");
-  } catch {
-    throw new Error("Choose Install first, then Install for all users.");
-  }
-  if (!validCommandScript(text)) throw new Error("The staged talktome command is not valid.");
+  const text = commandScript(serverPath(), launchCommand());
   const folder = mkdtempSync(path.join(os.tmpdir(), "talktome-"));
   const source = path.join(folder, "talktome");
   writeFileSync(source, text, { mode: 0o644 });
@@ -646,19 +727,25 @@ async function installCommandForAllUsers() {
   return true;
 }
 
+// A packaged app has no checkout and no virtual environment: the server ships
+// inside the bundle as the frozen build, so it is started as a binary rather
+// than through an interpreter that would not be there.
+function serverPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "talktome-server", "talktome-server")
+    : path.join(root, ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
+}
+
+function launchCommand() {
+  return app.isPackaged
+    ? `open -g -a "${path.resolve(process.execPath, "..", "..", "..")}"`
+    : `"${process.execPath}" "${root}"`;
+}
+
 async function launchBackend() {
   const directory = dataDirectory();
   mkdirSync(directory, { recursive: true, mode: 0o700 });
-  // A packaged app has no checkout and no virtual environment: the server ships
-  // inside the bundle as the frozen build, so it is started as a binary rather
-  // than through an interpreter that would not be there.
-  const python = app.isPackaged
-    ? path.join(process.resourcesPath, "talktome-server", "talktome-server")
-    : path.join(
-        root,
-        ".venv",
-        process.platform === "win32" ? "Scripts/python.exe" : "bin/python",
-      );
+  const python = serverPath();
   const tokenPath = path.join(directory, "token");
   try {
     const response = await fetch(`${origin}/v1/health`, {
@@ -674,7 +761,7 @@ async function launchBackend() {
   // The frozen server reads its port from the environment; the checkout's command
   // takes it as an argument. Passing both keeps one spawn call for either.
   const args = app.isPackaged ? [] : ["-m", "talktome", "serve", "--port", String(port)];
-  backend = spawn(python, args, {
+  const child = spawn(python, args, {
     // With no checkout there is no project folder either, so the server starts
     // somewhere that exists and lets the user pick a folder in the app.
     cwd: app.isPackaged ? app.getPath("home") : root,
@@ -691,41 +778,35 @@ async function launchBackend() {
       // By path rather than by bundle identifier: an app that has never been
       // opened from its final home may not be registered with LaunchServices yet,
       // and this always knows where it is.
-      TALKTOME_LAUNCH: app.isPackaged
-        ? `open -g -a "${path.resolve(process.execPath, "..", "..", "..")}"`
-        : `"${process.execPath}" "${root}"`,
+      TALKTOME_LAUNCH: launchCommand(),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
+  backend = child;
   let startupError;
-  backend.on("error", (error) => {
+  child.on("error", (error) => {
     startupError = error;
   });
-  backend.stdout.on("data", (data) => {
+  child.stdout.on("data", (data) => {
     backendLog = (backendLog + data).slice(-5000);
   });
-  backend.stderr.on("data", (data) => {
+  child.stderr.on("data", (data) => {
     backendLog = (backendLog + data).slice(-5000);
     process.stderr.write(data);
   });
-  backend.on("exit", () => {
-    if (window && !quitting) {
-      dialog.showErrorBox(
-        "The local server stopped",
-        "Restart TalkToMe to connect again.\n\n" + backendLog,
-      );
-      app.quit();
-    }
+  child.on("exit", () => {
+    if (child === backend && window && !quitting && !restartingBackend) void restartBackend();
   });
   for (let attempt = 0; attempt < 120; attempt++) {
     if (startupError) throw startupError;
-    if (backend.exitCode !== null)
+    if (child.exitCode !== null)
       throw new Error(backendLog || "The local server stopped.");
     try {
       const response = await fetch(`${origin}/v1/health`, {
         signal: AbortSignal.timeout(500),
       });
       if (response.ok && (await response.json()).service === "talktome") {
+        backendStartedAt = Date.now();
         return (
           process.env.TALKTOME_TOKEN || readFileSync(tokenPath, "utf8").trim()
         );
@@ -736,6 +817,48 @@ async function launchBackend() {
   throw new Error(
     "The local server did not start within 30 seconds.\n" + backendLog,
   );
+}
+
+/**
+ * Start the server again after it stopped.
+ *
+ * A new server makes a new browser session secret, so every window loads
+ * again with the token. The call that was live is gone with the old server.
+ */
+async function restartBackend() {
+  restartingBackend = true;
+  // A server that ran for a while before it stopped starts a new count.
+  if (Date.now() - backendStartedAt > 60000) backendRestarts = 0;
+  try {
+    while (backendRestarts < BACKEND_RESTARTS) {
+      backendRestarts++;
+      await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** backendRestarts));
+      if (quitting) return;
+      try {
+        callToken = await launchBackend();
+      } catch (error) {
+        process.stderr.write(`The local server did not start again: ${error.message}\n`);
+        continue;
+      }
+      callState = readCallState({});
+      if (callWindow && !callWindow.isDestroyed()) callWindow.destroy();
+      // The query makes this a new page load. A change to the hash alone
+      // would keep the old page, which holds the old session.
+      const load = `?restarted=${Date.now()}#token=${encodeURIComponent(callToken)}`;
+      if (onboardingWindow && !onboardingWindow.isDestroyed())
+        void onboardingWindow.loadURL(`${origin}/onboarding.html${load}`);
+      if (window && !window.isDestroyed()) void window.loadURL(`${origin}/${load}`);
+      refreshCallSurfaces();
+      return;
+    }
+    dialog.showErrorBox(
+      "The local server stopped",
+      `TalkToMe tried to start it ${BACKEND_RESTARTS} times. Restart TalkToMe to connect again.\n\n${backendLog}`,
+    );
+    app.quit();
+  } finally {
+    restartingBackend = false;
+  }
 }
 
 /**
@@ -762,8 +885,9 @@ app.whenReady().then(async () => {
     // start dark, and the renderer reports the saved choice once it loads.
     nativeTheme.themeSource = "dark";
     if (await offerMoveToApplications()) return;
-    startNotchGlow();
+    void startNotchGlow();
     const token = await launchBackend();
+    callToken = token;
     session.defaultSession.setPermissionCheckHandler(
       (contents, permission, requestingOrigin, details) => {
         return (
@@ -892,7 +1016,7 @@ app.whenReady().then(async () => {
         clearTimeout(callHideTimer);
         callHideTimer = null;
         if (callTranscriptOpen && callState.state !== "ringing") {
-          createCallWindow(token);
+          createCallWindow(callToken);
           showCallWindow();
           sendToCall(callState);
         } else if (callWindow && !callWindow.isDestroyed()) {
@@ -902,7 +1026,7 @@ app.whenReady().then(async () => {
       } else if (view.call && floatingCall) {
         clearTimeout(callHideTimer);
         callHideTimer = null;
-        createCallWindow(token);
+        createCallWindow(callToken);
         showCallWindow();
         sendToCall(callState);
       } else if (callWindow && !callWindow.isDestroyed()) {
@@ -910,24 +1034,23 @@ app.whenReady().then(async () => {
         // this message the ring tone kept playing in the hidden window, because
         // the renderer only stops a ring when it hears the idle state.
         sendToCall(callState);
-        // Wait for the closing animation before the window disappears. A later
-        // call cancels the timer. When the timer does run, the window returns to
-        // the pill size so the next call starts from a clean bound.
+        // Wait for the closing animation, then close the window. A hidden
+        // window kept its animation loop and its stream running for nothing.
+        // A later call cancels the timer, and the next ring makes a new window.
         if (!callHideTimer) {
           callHideTimer = setTimeout(() => {
             callHideTimer = null;
             if (!callState.live) {
               callTranscriptOpen = false;
               callAnchor = null;
-              applyCallBounds();
-              hideCallWindow();
+              if (callWindow && !callWindow.isDestroyed()) callWindow.destroy();
             }
           }, 360);
         }
       }
       if (onboardingActive && !settingsOpen && !callState.live && !mainDismissed) {
         const existing = onboardingWindow && !onboardingWindow.isDestroyed();
-        createOnboardingWindow(token);
+        createOnboardingWindow(callToken);
         if (existing && !onboardingWindow.isVisible()) onboardingWindow.reload();
         onboardingWindow.show();
       } else if (onboardingWindow && !onboardingWindow.isDestroyed()) {
@@ -942,95 +1065,40 @@ app.whenReady().then(async () => {
       refreshTrayMenu();
     }
     refreshCallSurfaces = syncWindows;
-    let lastServerCall = "";
-    async function pollServerCall() {
-      if (quitting) return;
-      try {
-        const response = await fetch(`${origin}/v1/state`, {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: AbortSignal.timeout(1500),
-        });
-        if (!response.ok) return;
-        const snapshot = await response.json();
-        const callId = snapshot.room?.call_id || null;
-        const ring = snapshot.managed?.status === "ringing"
-          ? snapshot.managed.ring || null
-          : null;
-        const approval = Boolean(callId && snapshot.managed?.approvals?.length);
-        const key = JSON.stringify([callId, ring?.id || null, approval]);
-        if (key === lastServerCall) return;
-        lastServerCall = key;
-        const changedCall = callId !== callState.callId;
-        callState = {
-          ...callState,
-          live: Boolean(callId || ring),
-          callId,
-          startedAt: snapshot.room?.started_at || null,
-          ring: ring ? { id: String(ring.id || ""), name: String(ring.name || "") } : null,
-          state: ring ? "ringing" : callId ? "active" : "idle",
-          name: snapshot.managed?.thread_name || snapshot.room?.agent?.name || "TalkToMe",
-          muted: changedCall ? false : callState.muted,
-          userActive: changedCall ? false : callState.userActive,
-          agentActive: changedCall ? false : callState.agentActive,
-          thinking: changedCall ? false : callState.thinking,
-        };
-        if (ring || changedCall) {
-          callTranscriptOpen = false;
-          callAnchor = null;
-          approvalOpenedPanel = false;
-        }
-        // The call surface draws the request from its own state poll. This
-        // side makes sure the panel is open and large enough to hold it.
-        if (approval !== callApproval) {
-          callApproval = approval;
-          if (approval && !callTranscriptOpen) {
-            callTranscriptOpen = true;
-            approvalOpenedPanel = true;
-          } else if (!approval && approvalOpenedPanel) {
-            callTranscriptOpen = false;
-            approvalOpenedPanel = false;
-          }
-          applyCallBounds();
-        }
-        updateNotchGlow();
-        syncWindows();
-      } catch {}
-    }
-    setInterval(() => { void pollServerCall(); }, 500);
-    void pollServerCall();
+    // The hidden window follows the server's stream and reports here. It is the
+    // only source of the call state, so the state has one writer.
     ipcMain.handle("talktome:call-state", (event, next) => {
       requireMainFrame(event);
       if (!next || typeof next !== "object") throw new Error("The call state is invalid.");
       const wasLive = callState.live;
       const previousCallId = callState.callId;
-      // Rebuilt rather than forwarded, so this is the one place the shape of the
-      // call state is defined. Every field the surface reads has to be copied
-      // here or it silently never arrives.
-      callState = {
-        live: Boolean(next.live),
-        callId: typeof next.callId === "string" ? next.callId : null,
-        startedAt: typeof next.startedAt === "string" ? next.startedAt : null,
-        muted: Boolean(next.muted),
-        state: typeof next.state === "string" ? next.state : "idle",
-        name: typeof next.name === "string" ? next.name.slice(0, 80) : "TalkToMe",
-        userActive: Boolean(next.userActive),
-        agentActive: Boolean(next.agentActive),
-        thinking: Boolean(next.thinking),
-        partial: typeof next.partial === "string" ? next.partial.slice(0, 6000) : "",
-        ring: next.ring && typeof next.ring === "object"
-          ? { id: String(next.ring.id || ""), name: String(next.ring.name || "") }
-          : null,
-      };
+      callState = readCallState(next);
       // A call that starts or ends begins with a closed transcript and the pill
-      // back at its place. The window is reused between calls, so without this
-      // the last call's panel and drag anchor survived into the next ring.
+      // back at its place, so the last call's panel and drag anchor do not
+      // survive into the next ring.
       if (wasLive !== callState.live || previousCallId !== callState.callId) {
         callTranscriptOpen = false;
         callAnchor = null;
+        approvalOpenedPanel = false;
       }
       // The ring asks one question and has no transcript.
       if (callState.state === "ringing") callTranscriptOpen = false;
+      // The surface draws the approval request. This side makes sure the panel
+      // is open and large enough to hold it.
+      const approval = Boolean(callState.callId && callState.approval);
+      if (approval !== callApproval) {
+        callApproval = approval;
+        if (approval && !callTranscriptOpen) {
+          callTranscriptOpen = true;
+          approvalOpenedPanel = true;
+        } else if (!approval && approvalOpenedPanel) {
+          callTranscriptOpen = false;
+          approvalOpenedPanel = false;
+        }
+        applyCallBounds();
+      }
       updateNotchGlow();
+      notifyRing();
       syncWindows();
       return true;
     });
@@ -1085,7 +1153,10 @@ app.whenReady().then(async () => {
       // be measured. It pushes them here and they are relayed to the surface.
       ipcMain.on("talktome:call-command", (event, type) => {
         if (!callWindow || event.sender !== callWindow.webContents) return;
-        if (!["mute", "interrupt", "end", "accept"].includes(type)) return;
+        if (type === "settings") return openSettings();
+        if (type === "mic-settings") return void shell.openExternal(SETTINGS_PANES.microphone);
+        if (!["mute", "interrupt", "end", "accept", "decline", "retry-mic", "dismiss"].includes(type))
+          return;
         sendToWindow("talktome:call-command", type);
       });
       ipcMain.on("talktome:call-resize", (event, open) => {
@@ -1194,8 +1265,11 @@ app.whenReady().then(async () => {
     });
     // TalkToMe keeps running in the menu bar while a call is live and the window
     // is hidden, and it is also how Settings is reached again.
-    callToken = token;
     buildTray();
+    // After sleep the microphone and the voice sockets can be dead without an
+    // error. The window that owns the call checks them again.
+    powerMonitor.on("resume", () => sendToWindow("talktome:resume"));
+    calls.start(token, tray);
     // The call can stay active when macOS hides its window. Show the call again
     // without changing the agent session or the audio in the main window.
     setInterval(() => {
@@ -1205,7 +1279,7 @@ app.whenReady().then(async () => {
         (!nativeNotch || callTranscriptOpen) &&
         (!callWindow || callWindow.isDestroyed() || !callWindow.isVisible())
       ) {
-        restoreCallWindow(token);
+        restoreCallWindow(callToken);
       }
     }, 1000);
     // A display can change size, gain or lose a Dock, or be unplugged while a

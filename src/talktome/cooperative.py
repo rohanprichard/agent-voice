@@ -95,7 +95,9 @@ class CooperativeAdapter:
         return {
             "cooperative": True,
             "supports_cancel_work": False,
-            "supports_cancel_speech": False,
+            # The app stops its own playback and drops the queued speech. The host
+            # keeps its work, which is what supports_cancel_work says.
+            "supports_cancel_speech": True,
             "requires_explicit_listen": True,
             "requires_explicit_reply": True,
         }

@@ -1,5 +1,6 @@
 import asyncio
 import hmac
+import json
 import logging
 import math
 import secrets
@@ -12,12 +13,13 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__, agents, inbox
+from .calls import CallHistory, call_routes
 from .config import data_dir, get_token
 from .cooperative import CooperativeAdapter
 from .external_adapters import configure_external_provider, external_provider_status
@@ -29,6 +31,10 @@ from .speech import MODELS, Speech
 from .timing import TimingHistory
 
 logger = logging.getLogger(__name__)
+
+# A stream ends after this long and the browser opens it again from the last
+# event id. A stream that never ended would hold the server open at shutdown.
+STREAM_SECONDS = 25
 
 
 class AuthBody(BaseModel):
@@ -130,10 +136,15 @@ def create_app(*, token=None, speech=None):
     smart_turn_enabled = engine.settings().get("smart_turn_enabled", True)
     remote_connector = None
 
+    def finished(task):
+        tasks.discard(task)
+        if not task.cancelled() and task.exception() is not None:
+            logger.error("A background task stopped.", exc_info=task.exception())
+
     def background(coroutine):
         task = asyncio.create_task(coroutine)
         tasks.add(task)
-        task.add_done_callback(tasks.discard)
+        task.add_done_callback(finished)
         return task
 
     def speech_status():
@@ -157,6 +168,7 @@ def create_app(*, token=None, speech=None):
         if saved and saved in {m["id"] for m in MODELS}:
             setup_task = background(asyncio.to_thread(engine.setup, saved))
         background(watch_inbox())
+        background(history.prune_daily())
         if remote_connector is not None:
             background(remote_connector.run())
         yield
@@ -242,6 +254,61 @@ def create_app(*, token=None, speech=None):
         if remote_connector is None:
             return {"configured": False}
         return {"configured": True, **remote_connector.status()}
+
+    def sse(kind, data, event_id=None):
+        head = f"id: {event_id}\n" if event_id is not None else ""
+        return f"{head}event: {kind}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n"
+
+    @app.get("/v1/stream")
+    async def stream(request: Request):
+        """One snapshot, then only what changed.
+
+        A reply delta carries its own text, so a streamed reply costs a few
+        hundred bytes an event instead of the whole room. A client that fell
+        behind the event buffer gets a new snapshot.
+        """
+        try:
+            resume = int(request.headers.get("last-event-id", ""))
+        except ValueError:
+            resume = None
+
+        async def events():
+            nonlocal resume
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + STREAM_SECONDS
+            after = resume if resume is not None and 0 <= resume <= room.sequence else None
+            spoken = None
+            yield "retry: 500\n\n"
+            while loop.time() < deadline:
+                if after is None:
+                    after = room.sequence
+                    state = {
+                        "room": room.snapshot(), "speech": speech_status(),
+                        "managed": managed.snapshot(), "voice": voice,
+                    }
+                    spoken = json.dumps(state["speech"])
+                    yield sse("snapshot", state, after)
+                    continue
+                batch, gap = await room.wait(after, min(1, deadline - loop.time()))
+                if gap:
+                    after = None
+                    continue
+                for event in batch:
+                    after = event["seq"]
+                    data = {"event": {k: v for k, v in event.items() if k != "agent_text"}}
+                    # A delta changes one message and nothing else.
+                    if event["type"] != "message.delta":
+                        data["room"] = room.snapshot(messages=False)
+                        data["managed"] = managed.snapshot()
+                    yield sse("event", data, after)
+                speech = speech_status()
+                if json.dumps(speech) != spoken:
+                    spoken = json.dumps(speech)
+                    yield sse("speech", speech, after)
+
+        return StreamingResponse(
+            events(), media_type="text/event-stream", headers={"X-Accel-Buffering": "no"},
+        )
 
     @app.get("/v1/events")
     async def events(after: int = Query(0, ge=0), timeout: float = Query(25, ge=0, le=25)):
@@ -413,15 +480,36 @@ def create_app(*, token=None, speech=None):
     async def warm_stream():
         return await managed_stream(None)
 
+    def speech_problem():
+        # A model or a remembered key still loading after the app woke up is
+        # not a missing setup. The user answers after it is ready.
+        if any(task is not None and not task.done() for task in (setup_task, voice_setup_task)):
+            return None
+        status = engine.status()
+        loading = {"downloading", "loading"}
+        hearing = status.get("status") == "ready" or status.get("status") in loading
+        speaking = status.get("tts_available") or (
+            status.get("tts_provider") == "kokoro"
+            and (status.get("kokoro") or {}).get("status") in loading
+        )
+        if hearing and speaking:
+            return None
+        return "TalkToMe speech is not set up. Ask the user to finish setup in TalkToMe."
+
     managed = ManagedSession(
         room, managed_speech, cache_audio, managed_stream,
         warm_stream=warm_stream if isinstance(engine, Speech) else None,
+        speech_problem=speech_problem,
     )
     app.state.managed = managed
     # Opt-in only: without a private laptop configuration this is None, and local
     # calls behave exactly as they did before the remote bridge existed.
     remote_connector = start_connector(managed)
     app.state.remote_connector = remote_connector
+    history = CallHistory(data_dir() / "calls")
+    history.remote_prefix = f"{remote_connector.pair}:" if remote_connector else None
+    managed.history = history
+    app.include_router(call_routes(managed, history))
 
     def provider_report():
         return {
@@ -514,12 +602,20 @@ def create_app(*, token=None, speech=None):
         handled in its own task for the same reason — an `end` while a call is
         ringing should not have to wait for the ring to finish asking.
         """
-        inbox.ready()
-        inbox.sweep()
+        prepared = False
         while True:
-            for request in inbox.pending():
-                inbox.retire(request)
-                background(answer_request(request))
+            # A failed pass is logged and tried again. If this loop stops, no
+            # agent can ring the user.
+            try:
+                if not prepared:
+                    inbox.ready()
+                    inbox.sweep()
+                    prepared = True
+                for request in inbox.pending():
+                    inbox.retire(request)
+                    background(answer_request(request))
+            except Exception:
+                logger.exception("The inbox could not be read. TalkToMe tries again.")
             await asyncio.sleep(inbox.POLL)
 
     @app.get("/v1/managed")
@@ -575,6 +671,12 @@ def create_app(*, token=None, speech=None):
             await managed.interrupt()
         audio_cache.clear()
         return result
+
+    @app.post("/v1/call/resume")
+    async def resume(body: CallBody):
+        room.require_call(body.call_id)
+        await managed.resume()
+        return {"ok": True}
 
     @app.post("/v1/call/interrupt")
     async def interrupt(body: InterruptBody):

@@ -10,8 +10,52 @@ const SETTINGS_PANES = {
 };
 
 const SYSTEM_COMMAND = "/usr/local/bin/talktome";
-// The first lines of every script that agents.py writes.
-const COMMAND_HEADER = "#!/bin/sh\n# Written by TalkToMe";
+
+// The same values as agents.py. A test compares the two scripts byte for byte.
+const APP_ID = "com.rohanprichard.talktome";
+const SERVER_IN_APP = "Contents/Resources/talktome-server/talktome-server";
+const APP_FOLDERS = ["/Applications/TalkToMe.app", "$HOME/Applications/TalkToMe.app"];
+
+// Python's shlex.quote.
+function shellQuote(value) {
+  if (!value) return "''";
+  if (/^[\w@%+=:,./-]+$/.test(value)) return value;
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+// The `talktome` script that agents.py writes for the same interpreter and
+// launcher. The main process installs this text, and never a file that another
+// process could change before the administrator prompt.
+function commandScript(python, launcher) {
+  const lines = ["#!/bin/sh", "# Written by TalkToMe so an agent can run `talktome call`."];
+  if (!python.endsWith(`/${SERVER_IN_APP}`)) {
+    if (launcher) lines.push(`export TALKTOME_LAUNCH=${shellQuote(launcher)}`);
+    lines.push(`exec ${shellQuote(python)} -m talktome "$@"`);
+    return `${lines.join("\n")}\n`;
+  }
+  const folders = APP_FOLDERS.map((folder) => `"${folder}"`).join(" ");
+  lines.push(
+    "# It finds the app each time it runs, so it keeps working after the app moves.",
+    `server="${SERVER_IN_APP}"`,
+    "app=",
+    `for candidate in ${folders}; do`,
+    '  if [ -x "$candidate/$server" ]; then app=$candidate; break; fi',
+    "done",
+    'if [ -z "$app" ]; then',
+    `  app=$(mdfind "kMDItemCFBundleIdentifier == '${APP_ID}'" 2>/dev/null |`,
+    "    grep -v -e /AppTranslocation/ -e '^/Volumes/' | while IFS= read -r candidate; do",
+    '      if [ -x "$candidate/$server" ]; then echo "$candidate"; break; fi',
+    "    done)",
+    "fi",
+    'if [ -z "$app" ]; then',
+    '  echo "TalkToMe was not found. Move TalkToMe to the Applications folder, then try again." >&2',
+    "  exit 1",
+    "fi",
+    'export TALKTOME_LAUNCH="open -g -a \\"$app\\""',
+    'exec "$app/$server" -m talktome "$@"',
+  );
+  return `${lines.join("\n")}\n`;
+}
 
 function loginItemState({ packaged, platform, settings }) {
   // A development run would register the Electron binary, not TalkToMe.
@@ -27,10 +71,6 @@ function loginItemState({ packaged, platform, settings }) {
 
 function shouldOfferMove({ packaged, platform, inApplications, declined }) {
   return Boolean(packaged) && platform === "darwin" && !inApplications && !declined;
-}
-
-function validCommandScript(text) {
-  return typeof text === "string" && text.startsWith(COMMAND_HEADER) && text.length < 8192;
 }
 
 // The paths go in as arguments, so no path is ever part of the script text.
@@ -52,7 +92,7 @@ module.exports = {
   SETTINGS_PANES,
   SYSTEM_COMMAND,
   adminInstallArgs,
+  commandScript,
   loginItemState,
   shouldOfferMove,
-  validCommandScript,
 };
