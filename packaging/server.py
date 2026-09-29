@@ -6,6 +6,7 @@ for uvicorn to import, because a frozen build has no importable package tree for
 uvicorn to walk at runtime.
 """
 
+import multiprocessing
 import os
 import sys
 
@@ -114,6 +115,10 @@ def selftest():
 
 
 def main():
+    # tqdm makes a multiprocessing lock during a model download, and that starts the
+    # resource tracker as this binary with `-c`. Without this, the tracker ran as a
+    # second server and failed on the presence lock.
+    multiprocessing.freeze_support()
     if "--selftest" in sys.argv:
         return selftest()
     argv = sys.argv[1:]

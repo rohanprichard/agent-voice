@@ -6,8 +6,8 @@ set -e
 cd "$(dirname "$0")/.."
 rm -rf build/frozen dist/frozen
 # PyInstaller drops the dist-info folders, so the bundled licenses are copied out.
-uv run python scripts/third_party_licenses.py build/THIRD_PARTY_LICENSES.txt
-uv run pyinstaller packaging/server.py \
+uv run --frozen --extra speech python scripts/third_party_licenses.py build/THIRD_PARTY_LICENSES.txt
+uv run --frozen --extra speech pyinstaller packaging/server.py \
   --name talktome-server \
   --noconfirm \
   --clean \
@@ -16,12 +16,15 @@ uv run pyinstaller packaging/server.py \
   --specpath build \
   --collect-all faster_whisper \
   --collect-all ctranslate2 \
-  --collect-all onnxruntime \
   --collect-all kokoro_onnx \
   --collect-all espeakng_loader \
-  --collect-all av \
   --collect-all tokenizers \
   --collect-all keyring \
+  --exclude-module onnxruntime.transformers \
+  --exclude-module onnxruntime.quantization \
+  --exclude-module onnxruntime.tools \
+  --exclude-module onnxruntime.datasets \
+  --exclude-module hf_xet \
   --add-data "$PWD/src/talktome/static:talktome/static" \
   --add-data "$PWD/skills/talktome:skills/talktome" \
   --add-data "$PWD/licenses:licenses" \
@@ -41,3 +44,10 @@ uv run pyinstaller packaging/server.py \
   --hidden-import talktome.remote.connector \
   --hidden-import talktome.remote.daemon \
   --hidden-import talktome.remote.relay
+
+# Two large files that nothing loads. Python reaches onnxruntime through its own
+# extension, which does not link the C library beside it. Kokoro speaks only
+# English, so eSpeak needs only the English dictionary.
+INTERNAL=dist/frozen/talktome-server/_internal
+rm -f "$INTERNAL"/onnxruntime/capi/libonnxruntime.*.dylib
+find "$INTERNAL/espeakng_loader/espeak-ng-data" -maxdepth 1 -name '*_dict' ! -name en_dict -delete
