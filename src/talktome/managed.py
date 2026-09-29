@@ -487,6 +487,27 @@ class ManagedSession:
                 entry[3].cancel()
         self.tool = None
 
+    async def resume(self):
+        """Open the voice socket again after the computer slept.
+
+        A socket from before sleep can look open and be dead, and the next reply
+        would then wait on it.
+        """
+        async with self.lock:
+            if self.voice_connection is None and self.voice_warmup is None:
+                return
+            warmup, self.voice_warmup = self.voice_warmup, None
+            connection, self.voice_connection = self.voice_connection, None
+            if warmup:
+                warmup.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await warmup
+            if connection:
+                with contextlib.suppress(Exception):
+                    await connection.close()
+            if self.adapter and self.warm_stream:
+                self.voice_warmup = asyncio.create_task(self._prepare_voice())
+
     async def interrupt(self, revision=None):
         async with self.lock:
             if revision is not None and revision != self.room.revision:

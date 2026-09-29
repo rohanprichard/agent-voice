@@ -666,6 +666,12 @@ def create_app(*, token=None, speech=None):
         audio_cache.clear()
         return result
 
+    @app.post("/v1/call/resume")
+    async def resume(body: CallBody):
+        room.require_call(body.call_id)
+        await managed.resume()
+        return {"ok": True}
+
     @app.post("/v1/call/interrupt")
     async def interrupt(body: InterruptBody):
         result = await room.interrupt(

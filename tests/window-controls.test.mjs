@@ -243,3 +243,22 @@ test("The ring can be declined on the pill, and it shows a notification", () => 
   // The surface stops its tone a little after the server's 30 second ring.
   assert.match(callJs, /const RING_GUARD_MS = 32000;/);
 });
+
+test("A server that stops starts again three times before the app gives up", () => {
+  assert.match(main, /const BACKEND_RESTARTS = 3;/);
+  const restart = main.slice(main.indexOf("async function restartBackend()"));
+  const body = restart.slice(0, restart.indexOf("\n}\n"));
+  // A longer wait each time.
+  assert.match(body, /500 \* 2 \*\* backendRestarts/);
+  // A new server has a new session secret, so each window loads with the token.
+  assert.match(body, /window\.loadURL\(`\$\{origin\}\/\$\{load\}`\)/);
+  assert.ok(body.indexOf("showErrorBox") > body.indexOf("while (backendRestarts < BACKEND_RESTARTS)"));
+  // Only the server that is current can start a restart.
+  assert.match(main, /if \(child === backend && window && !quitting && !restartingBackend\) void restartBackend\(\);/);
+});
+
+test("The call window checks the microphone and voice again after sleep", () => {
+  assert.match(main, /powerMonitor\.on\("resume", \(\) => sendToWindow\("talktome:resume"\)\)/);
+  assert.match(app, /window\.talktomeDesktop\?\.onResume\?\.\(\(\) => void resumeAfterSleep\(\)\);/);
+  assert.match(app, /post\("\/call\/resume"/);
+});

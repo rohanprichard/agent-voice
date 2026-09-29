@@ -849,3 +849,34 @@ async def test_a_failed_teardown_step_does_not_stop_the_others(tmp_path):
         assert speaker.done()
         assert room.agent is None
         assert managed.status == "disconnected"
+
+
+async def test_waking_up_opens_the_voice_socket_again(tmp_path):
+    class Connection:
+        def __init__(self):
+            self.closed = False
+
+        async def close(self):
+            self.closed = True
+
+    warmed = []
+
+    async def warm():
+        warmed.append(True)
+
+    async with session(tmp_path) as (_room, managed, _):
+        old = Connection()
+        managed.voice_connection = old
+        managed.warm_stream = warm
+        managed._prepare_voice = warm
+        await managed.resume()
+        await managed.voice_warmup
+        assert old.closed
+        assert managed.voice_connection is None
+        assert warmed == [True]
+
+
+async def test_waking_up_without_a_voice_socket_does_nothing(tmp_path):
+    async with session(tmp_path) as (_room, managed, _):
+        await managed.resume()
+        assert managed.voice_warmup is None

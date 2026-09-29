@@ -979,11 +979,28 @@ async function endCall() {
 
 async function retryMicrophone() {
   if (!state.room.call_id) return;
+  const muted = Boolean(microphone?.muted);
   microphone?.stop();
   microphone = null;
   stopRealtimeInput();
   await startMicrophone();
+  if (muted && microphone) {
+    microphone.setMuted(true);
+    stopRealtimeInput();
+    render();
+  }
 }
+
+// The Mac woke up. The microphone and both ElevenLabs sockets can be dead with
+// no error, so each one starts again. A microphone that does not come back
+// shows on the pill with Retry mic.
+async function resumeAfterSleep() {
+  await refresh().catch(() => {});
+  if (!state.room.call_id) return;
+  await post("/call/resume", { call_id: state.room.call_id }).catch(() => {});
+  await retryMicrophone();
+}
+window.talktomeDesktop?.onResume?.(() => void resumeAfterSleep());
 
 // The floating call surface lives in its own window and cannot touch the
 // microphone, the audio queue, or the agent session. This window owns all three,

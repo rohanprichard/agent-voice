@@ -29,4 +29,5 @@ contextBridge.exposeInMainWorld("talktomeDesktop", {
   setCallState: (state) => ipcRenderer.invoke("talktome:call-state", state),
   onCallCommand: (callback) =>
     ipcRenderer.on("talktome:call-command", (_event, type) => callback(type)),
+  onResume: (callback) => ipcRenderer.on("talktome:resume", () => callback()),
 });

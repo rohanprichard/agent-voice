@@ -10,6 +10,7 @@ const {
   nativeImage,
   nativeTheme,
   Notification,
+  powerMonitor,
   screen,
   shell,
 } = require("electron");
@@ -103,6 +104,12 @@ let callState = readCallState({});
 let quitting = false;
 let shutdownStarted = false;
 let backendLog = "";
+// A server that stops is started again this many times, with a longer wait
+// each time, before the app gives up and says so.
+const BACKEND_RESTARTS = 3;
+let backendRestarts = 0;
+let backendStartedAt = 0;
+let restartingBackend = false;
 
 // The actions a problem on the call surface can offer.
 const ALERT_ACTIONS = ["retry-mic", "mic-settings", "settings"];
@@ -743,7 +750,7 @@ async function launchBackend() {
   // The frozen server reads its port from the environment; the checkout's command
   // takes it as an argument. Passing both keeps one spawn call for either.
   const args = app.isPackaged ? [] : ["-m", "talktome", "serve", "--port", String(port)];
-  backend = spawn(python, args, {
+  const child = spawn(python, args, {
     // With no checkout there is no project folder either, so the server starts
     // somewhere that exists and lets the user pick a folder in the app.
     cwd: app.isPackaged ? app.getPath("home") : root,
@@ -764,35 +771,31 @@ async function launchBackend() {
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
+  backend = child;
   let startupError;
-  backend.on("error", (error) => {
+  child.on("error", (error) => {
     startupError = error;
   });
-  backend.stdout.on("data", (data) => {
+  child.stdout.on("data", (data) => {
     backendLog = (backendLog + data).slice(-5000);
   });
-  backend.stderr.on("data", (data) => {
+  child.stderr.on("data", (data) => {
     backendLog = (backendLog + data).slice(-5000);
     process.stderr.write(data);
   });
-  backend.on("exit", () => {
-    if (window && !quitting) {
-      dialog.showErrorBox(
-        "The local server stopped",
-        "Restart TalkToMe to connect again.\n\n" + backendLog,
-      );
-      app.quit();
-    }
+  child.on("exit", () => {
+    if (child === backend && window && !quitting && !restartingBackend) void restartBackend();
   });
   for (let attempt = 0; attempt < 120; attempt++) {
     if (startupError) throw startupError;
-    if (backend.exitCode !== null)
+    if (child.exitCode !== null)
       throw new Error(backendLog || "The local server stopped.");
     try {
       const response = await fetch(`${origin}/v1/health`, {
         signal: AbortSignal.timeout(500),
       });
       if (response.ok && (await response.json()).service === "talktome") {
+        backendStartedAt = Date.now();
         return (
           process.env.TALKTOME_TOKEN || readFileSync(tokenPath, "utf8").trim()
         );
@@ -803,6 +806,48 @@ async function launchBackend() {
   throw new Error(
     "The local server did not start within 30 seconds.\n" + backendLog,
   );
+}
+
+/**
+ * Start the server again after it stopped.
+ *
+ * A new server makes a new browser session secret, so every window loads
+ * again with the token. The call that was live is gone with the old server.
+ */
+async function restartBackend() {
+  restartingBackend = true;
+  // A server that ran for a while before it stopped starts a new count.
+  if (Date.now() - backendStartedAt > 60000) backendRestarts = 0;
+  try {
+    while (backendRestarts < BACKEND_RESTARTS) {
+      backendRestarts++;
+      await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** backendRestarts));
+      if (quitting) return;
+      try {
+        callToken = await launchBackend();
+      } catch (error) {
+        process.stderr.write(`The local server did not start again: ${error.message}\n`);
+        continue;
+      }
+      callState = readCallState({});
+      if (callWindow && !callWindow.isDestroyed()) callWindow.destroy();
+      // The query makes this a new page load. A change to the hash alone
+      // would keep the old page, which holds the old session.
+      const load = `?restarted=${Date.now()}#token=${encodeURIComponent(callToken)}`;
+      if (onboardingWindow && !onboardingWindow.isDestroyed())
+        void onboardingWindow.loadURL(`${origin}/onboarding.html${load}`);
+      if (window && !window.isDestroyed()) void window.loadURL(`${origin}/${load}`);
+      refreshCallSurfaces();
+      return;
+    }
+    dialog.showErrorBox(
+      "The local server stopped",
+      `TalkToMe tried to start it ${BACKEND_RESTARTS} times. Restart TalkToMe to connect again.\n\n${backendLog}`,
+    );
+    app.quit();
+  } finally {
+    restartingBackend = false;
+  }
 }
 
 /**
@@ -831,6 +876,7 @@ app.whenReady().then(async () => {
     if (await offerMoveToApplications()) return;
     void startNotchGlow();
     const token = await launchBackend();
+    callToken = token;
     session.defaultSession.setPermissionCheckHandler(
       (contents, permission, requestingOrigin, details) => {
         return (
@@ -959,7 +1005,7 @@ app.whenReady().then(async () => {
         clearTimeout(callHideTimer);
         callHideTimer = null;
         if (callTranscriptOpen && callState.state !== "ringing") {
-          createCallWindow(token);
+          createCallWindow(callToken);
           showCallWindow();
           sendToCall(callState);
         } else if (callWindow && !callWindow.isDestroyed()) {
@@ -969,7 +1015,7 @@ app.whenReady().then(async () => {
       } else if (view.call && floatingCall) {
         clearTimeout(callHideTimer);
         callHideTimer = null;
-        createCallWindow(token);
+        createCallWindow(callToken);
         showCallWindow();
         sendToCall(callState);
       } else if (callWindow && !callWindow.isDestroyed()) {
@@ -993,7 +1039,7 @@ app.whenReady().then(async () => {
       }
       if (onboardingActive && !settingsOpen && !callState.live && !mainDismissed) {
         const existing = onboardingWindow && !onboardingWindow.isDestroyed();
-        createOnboardingWindow(token);
+        createOnboardingWindow(callToken);
         if (existing && !onboardingWindow.isVisible()) onboardingWindow.reload();
         onboardingWindow.show();
       } else if (onboardingWindow && !onboardingWindow.isDestroyed()) {
@@ -1208,8 +1254,10 @@ app.whenReady().then(async () => {
     });
     // TalkToMe keeps running in the menu bar while a call is live and the window
     // is hidden, and it is also how Settings is reached again.
-    callToken = token;
     buildTray();
+    // After sleep the microphone and the voice sockets can be dead without an
+    // error. The window that owns the call checks them again.
+    powerMonitor.on("resume", () => sendToWindow("talktome:resume"));
     // The call can stay active when macOS hides its window. Show the call again
     // without changing the agent session or the audio in the main window.
     setInterval(() => {
@@ -1219,7 +1267,7 @@ app.whenReady().then(async () => {
         (!nativeNotch || callTranscriptOpen) &&
         (!callWindow || callWindow.isDestroyed() || !callWindow.isVisible())
       ) {
-        restoreCallWindow(token);
+        restoreCallWindow(callToken);
       }
     }, 1000);
     // A display can change size, gain or lose a Dock, or be unplugged while a
