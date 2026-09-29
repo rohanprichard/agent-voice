@@ -18,6 +18,12 @@ If `talktome` is absent from the shell path, examine `~/.local/bin/talktome`.
 Use that absolute path for all call commands if the file exists.
 If neither command exists, ask the user to install the command from TalkToMe Settings.
 
+## Use the plugin tool when it exists
+
+If the host has a `talktome_call` tool, call it and skip the rest of this skill.
+The TalkToMe plugin then runs the call. Each thing the user says arrives as a normal message, and each reply you send is spoken.
+Do not run `listen` or `reply` during a plugin call. Use `talktome_end` only when the user asks to end the call.
+
 ## Local or remote
 
 Run `talktome remote-status` first.

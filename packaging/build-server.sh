@@ -27,6 +27,7 @@ uv run --frozen --extra speech pyinstaller packaging/server.py \
   --exclude-module hf_xet \
   --add-data "$PWD/src/talktome/static:talktome/static" \
   --add-data "$PWD/skills/talktome:skills/talktome" \
+  --add-data "$PWD/src/talktome/plugins:talktome/plugins" \
   --add-data "$PWD/licenses:licenses" \
   --add-data "$PWD/build/THIRD_PARTY_LICENSES.txt:licenses" \
   --add-data "$PWD/NOTICE:licenses" \

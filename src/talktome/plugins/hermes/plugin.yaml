@@ -1,0 +1,23 @@
+name: talktome
+label: TalkToMe
+kind: platform
+version: 0.1.0
+description: >
+  Voice calls with Hermes through the TalkToMe desktop app.
+  The agent rings the user's Mac with the talktome_call tool. After the user
+  answers, each spoken turn arrives as a message in the session that placed the
+  call, and each reply is spoken on the Mac. The Mac keeps the microphone and
+  speech. On a server, the calls cross the TalkToMe remote bridge.
+author: Rohan Richard
+provides_tools:
+  - talktome_call
+  - talktome_end
+optional_env:
+  - name: TALKTOME_COMMAND
+    description: "Path to the talktome command (default: talktome on PATH, then ~/.local/bin/talktome)"
+    prompt: "talktome command"
+    password: false
+  - name: TALKTOME_REMOTE
+    description: "Use the remote bridge: true, false, or auto (default auto reads talktome remote-status)"
+    prompt: "Use the remote bridge? (auto/true/false)"
+    password: false

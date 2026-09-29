@@ -177,6 +177,28 @@ REMOTE_BRIDGE_COMMANDS = frozenset(
 )
 
 
+def plugin_command(args, parser) -> int:
+    from . import host_plugins
+
+    action = args.target or "status"
+    if action not in {"install", "remove", "status"}:
+        parser.error("Use plugin install, plugin remove, or plugin status.")
+    if args.agent not in {"hermes"}:
+        parser.error("Name the host with --agent hermes.")
+    handlers = {
+        "install": host_plugins.install,
+        "remove": host_plugins.remove,
+        "status": host_plugins.status,
+    }
+    try:
+        result = handlers[action](args.agent, Path.home())
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(json.dumps(result, indent=2))
+    return 0
+
+
 def main():
     parser = argparse.ArgumentParser(prog="talktome", description="Start the local speech server.")
     parser.add_argument(
@@ -192,6 +214,7 @@ def main():
             "reply",
             "configure-agent",
             "skill",
+            "plugin",
             *sorted(REMOTE_BRIDGE_COMMANDS),
         ],
         default="serve",
@@ -200,7 +223,10 @@ def main():
     parser.add_argument(
         "target",
         nargs="?",
-        help="For remote-connect, the server as user@host. For remote-service, install, remove, or status.",
+        help=(
+            "For remote-connect, the server as user@host. "
+            "For remote-service and plugin, install, remove, or status."
+        ),
     )
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--agent", choices=["codex", "claude", "hermes", "openclaw", "generic"], default="codex")
@@ -286,7 +312,7 @@ def main():
         help="What the user sees while the call is ringing. Defaults to the project folder name.",
     )
     args = parser.parse_args()
-    if args.target and args.command not in {"remote-connect", "remote-service"}:
+    if args.target and args.command not in {"remote-connect", "remote-service", "plugin"}:
         parser.error(f"unrecognized arguments: {args.target}")
 
     if args.remote or args.command in REMOTE_BRIDGE_COMMANDS:
@@ -298,6 +324,8 @@ def main():
         from .agents import skill_source
 
         print(skill_source().read_text(encoding="utf-8"))
+    elif args.command == "plugin":
+        raise SystemExit(plugin_command(args, parser))
     elif args.command == "token":
         print(get_token())
     elif args.command == "connection":
