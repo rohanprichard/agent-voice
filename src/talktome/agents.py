@@ -90,9 +90,6 @@ COMMAND_DIRS = ("~/.local/bin", "/opt/homebrew/bin", "/usr/local/bin")
 # Mac without Homebrew it is on PATH through /etc/paths but belongs to root.
 SYSTEM_COMMAND_DIR = "/usr/local/bin"
 
-# The copy the desktop app puts into SYSTEM_COMMAND_DIR, written here first so the
-# script always comes from this module.
-STAGED_COMMAND = "talktome-command"
 
 APP_ID = "com.rohanprichard.talktome"
 SERVER_IN_APP = "Contents/Resources/talktome-server/talktome-server"
@@ -258,12 +255,8 @@ def install_command(
     script = command_script(python, launcher)
     directories = [directory for directory in on_path if writable(directory)]
     if not directories and Path(SYSTEM_COMMAND_DIR) in on_path:
-        # Staged for the desktop app, which copies it after an administrator prompt.
-        from .config import data_dir
-
-        staged = data_dir() / STAGED_COMMAND
-        staged.write_text(script, encoding="utf-8")
-        staged.chmod(0o600)
+        # The desktop app writes the same script there after an administrator
+        # prompt. commandScript in desktop/install.cjs builds it.
         raise ValueError(
             f"Your shell only searches {SYSTEM_COMMAND_DIR}, and that folder needs an "
             "administrator. Choose Install for all users, or add this line to "

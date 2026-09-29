@@ -308,8 +308,8 @@ function skillState(report) {
   return "Adds the skill and the talktome command";
 }
 
-// The server writes the script first, and the main process copies it into
-// /usr/local/bin after the macOS administrator prompt.
+// The server tries a normal install first. The main process then writes its own
+// copy of the script into /usr/local/bin after the macOS administrator prompt.
 async function installForAllUsers() {
   agentBusy = true;
   renderAgents();

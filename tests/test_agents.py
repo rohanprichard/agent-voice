@@ -1,6 +1,9 @@
+import json
 import os
 import shlex
+import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -465,10 +468,10 @@ def test_a_checkout_keeps_its_own_interpreter(tmp_path, safe_command_dirs):
 
 
 def test_a_system_folder_is_left_for_the_administrator_prompt(
-    tmp_path, monkeypatch, safe_command_dirs, isolated_data_dir
+    tmp_path, monkeypatch, safe_command_dirs
 ):
     # A Mac without Homebrew has /usr/local/bin on PATH, owned by root. The
-    # script is staged for the desktop app to copy after an administrator prompt.
+    # desktop app writes the script there after an administrator prompt.
     local = tmp_path / "bin" / "local"
     system = tmp_path / "bin" / "system"
     system.mkdir(parents=True)
@@ -480,8 +483,6 @@ def test_a_system_folder_is_left_for_the_administrator_prompt(
         with pytest.raises(ValueError) as error:
             agents.install_command(tmp_path, "/repo/.venv/bin/python", f"{system}:/usr/bin")
         assert "Install for all users" in str(error.value)
-        staged = isolated_data_dir / agents.STAGED_COMMAND
-        assert staged.read_text() == agents.command_script("/repo/.venv/bin/python")
         assert not (system / "talktome").exists()
         # A user folder on PATH is used before any administrator prompt.
         path_env = f"{local}:{system}"
@@ -524,3 +525,27 @@ def test_the_dev_shim_runs_from_a_path_the_shell_would_expand(tmp_path):
     shim.write_text(agents.command_script(str(python)))
     result = subprocess.run(["/bin/sh", str(shim), "call"], capture_output=True, text=True, check=True)
     assert result.stdout.strip() == "ran -m talktome call"
+
+
+NODE = shutil.which("node")
+
+
+@pytest.mark.skipif(NODE is None, reason="needs Node.js")
+@pytest.mark.parametrize(
+    ("python", "launcher"),
+    [
+        (f"/Applications/TalkToMe.app/{agents.SERVER_IN_APP}", None),
+        ("/Users/me/talktome/.venv/bin/python", '"/e/Electron" "/Users/me/talktome"'),
+        ('/Users/me/odd "$dir"/.venv/bin/python', "it's"),
+    ],
+)
+def test_the_desktop_app_builds_the_same_script(python, launcher):
+    # The app installs its own copy for all users and never reads the staged file,
+    # so the two builders must not drift.
+    install = Path(__file__).resolve().parents[1] / "desktop" / "install.cjs"
+    program = (
+        f"process.stdout.write(require({json.dumps(str(install))})"
+        f".commandScript({json.dumps(python)}, {json.dumps(launcher)}))"
+    )
+    result = subprocess.run([NODE, "-e", program], capture_output=True, text=True, check=True)
+    assert result.stdout == agents.command_script(python, launcher)

@@ -34,9 +34,9 @@ const { computeVisibility } = require("./lifecycle.cjs");
 const {
   SETTINGS_PANES,
   adminInstallArgs,
+  commandScript,
   loginItemState,
   shouldOfferMove,
-  validCommandScript,
 } = require("./install.cjs");
 
 app.setName("talktome");
@@ -619,16 +619,12 @@ function loginItem() {
   });
 }
 
-// agents.py stages the script when /usr/local/bin is the only folder for it.
-// A fresh private copy is installed, so the file cannot change after the check.
+// The script is built here from what this process started the server with, and
+// written to a private folder. The copy agents.py stages in the data folder is
+// never read: any process of this user can change that file before the
+// administrator prompt.
 async function installCommandForAllUsers() {
-  let text;
-  try {
-    text = readFileSync(path.join(dataDirectory(), "talktome-command"), "utf8");
-  } catch {
-    throw new Error("Choose Install first, then Install for all users.");
-  }
-  if (!validCommandScript(text)) throw new Error("The staged talktome command is not valid.");
+  const text = commandScript(serverPath(), launchCommand());
   const folder = mkdtempSync(path.join(os.tmpdir(), "talktome-"));
   const source = path.join(folder, "talktome");
   writeFileSync(source, text, { mode: 0o644 });
@@ -646,19 +642,25 @@ async function installCommandForAllUsers() {
   return true;
 }
 
+// A packaged app has no checkout and no virtual environment: the server ships
+// inside the bundle as the frozen build, so it is started as a binary rather
+// than through an interpreter that would not be there.
+function serverPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "talktome-server", "talktome-server")
+    : path.join(root, ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
+}
+
+function launchCommand() {
+  return app.isPackaged
+    ? `open -g -a "${path.resolve(process.execPath, "..", "..", "..")}"`
+    : `"${process.execPath}" "${root}"`;
+}
+
 async function launchBackend() {
   const directory = dataDirectory();
   mkdirSync(directory, { recursive: true, mode: 0o700 });
-  // A packaged app has no checkout and no virtual environment: the server ships
-  // inside the bundle as the frozen build, so it is started as a binary rather
-  // than through an interpreter that would not be there.
-  const python = app.isPackaged
-    ? path.join(process.resourcesPath, "talktome-server", "talktome-server")
-    : path.join(
-        root,
-        ".venv",
-        process.platform === "win32" ? "Scripts/python.exe" : "bin/python",
-      );
+  const python = serverPath();
   const tokenPath = path.join(directory, "token");
   try {
     const response = await fetch(`${origin}/v1/health`, {
@@ -691,9 +693,7 @@ async function launchBackend() {
       // By path rather than by bundle identifier: an app that has never been
       // opened from its final home may not be registered with LaunchServices yet,
       // and this always knows where it is.
-      TALKTOME_LAUNCH: app.isPackaged
-        ? `open -g -a "${path.resolve(process.execPath, "..", "..", "..")}"`
-        : `"${process.execPath}" "${root}"`,
+      TALKTOME_LAUNCH: launchCommand(),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

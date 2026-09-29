@@ -8,9 +8,9 @@ const require = createRequire(import.meta.url);
 const {
   SETTINGS_PANES,
   adminInstallArgs,
+  commandScript,
   loginItemState,
   shouldOfferMove,
-  validCommandScript,
 } = require("../desktop/install.cjs");
 
 const main = readFileSync(fileURLToPath(new URL("../desktop/main.cjs", import.meta.url)), "utf8");
@@ -46,11 +46,20 @@ test("Only a packaged app outside Applications is asked to move, and only once",
   assert.equal(shouldOfferMove({ ...base, packaged: false }), false);
 });
 
-test("Only a script that TalkToMe wrote is installed for all users", () => {
-  assert.equal(validCommandScript("#!/bin/sh\n# Written by TalkToMe so an agent can run it.\n"), true);
-  assert.equal(validCommandScript("#!/bin/sh\nrm -rf ~\n"), false);
-  assert.equal(validCommandScript(`#!/bin/sh\n# Written by TalkToMe\n${"x".repeat(9000)}`), false);
-  assert.equal(validCommandScript(null), false);
+test("The install for all users never reads the staged copy", () => {
+  // Any process of this user can change that file before the password prompt.
+  const install = main.slice(main.indexOf("async function installCommandForAllUsers"));
+  const body = install.slice(0, install.indexOf("\n}\n"));
+  assert.ok(!body.includes("talktome-command"));
+  assert.ok(!body.includes("readFileSync"));
+  assert.match(body, /commandScript\(serverPath\(\), launchCommand\(\)\)/);
+});
+
+test("The development script quotes what the shell would expand", () => {
+  const script = commandScript('/tmp/a "$HOME" b/python', '"/e/Electron" "/repo"');
+  assert.ok(script.includes(`exec '/tmp/a "$HOME" b/python' -m talktome "$@"`));
+  assert.ok(script.includes(`export TALKTOME_LAUNCH='"/e/Electron" "/repo"'`));
+  assert.ok(script.startsWith("#!/bin/sh\n# Written by TalkToMe"));
 });
 
 test("The administrator script takes its paths as arguments", () => {
