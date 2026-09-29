@@ -13,7 +13,7 @@ const {
   screen,
   shell,
 } = require("electron");
-const { execFile, spawn, spawnSync } = require("node:child_process");
+const { execFile, spawn } = require("node:child_process");
 const {
   readFileSync,
   mkdirSync,
@@ -51,6 +51,8 @@ const root = path.resolve(__dirname, "..");
 // steps out of the way. Setting TALKTOME_FLOATING_CALL=0 turns off the call
 // window.
 const floatingCall = process.env.TALKTOME_FLOATING_CALL !== "0";
+// The native notch surface stays off until its experience is designed.
+const NATIVE_NOTCH = false;
 let backend;
 let notchGlow;
 let nativeNotch = false;
@@ -184,15 +186,21 @@ function updateNotchGlow() {
   })}\n`);
 }
 
-function startNotchGlow() {
-  if (process.platform !== "darwin") return;
+async function startNotchGlow() {
+  // An old build of the helper can still be on disk, so the switch is checked
+  // before the file is.
+  if (!NATIVE_NOTCH || process.platform !== "darwin") return;
   const binary = app.isPackaged
     ? path.join(process.resourcesPath, "notch-surface", "NotchSurface.app", "Contents", "MacOS", "NotchSurface")
     : path.join(root, "dist", "native", "NotchSurface.app", "Contents", "MacOS", "NotchSurface");
   if (!existsSync(binary)) return;
-  const measured = spawnSync(binary, ["--geometry"], { encoding: "utf8", timeout: 2000 });
+  // Asked without blocking, so a slow helper does not hold up the app start.
   try {
-    nativeGeometry = JSON.parse(measured.stdout);
+    const measured = await new Promise((resolve, reject) => {
+      execFile(binary, ["--geometry"], { encoding: "utf8", timeout: 2000 }, (error, stdout) =>
+        error ? reject(error) : resolve(stdout));
+    });
+    nativeGeometry = JSON.parse(measured);
     if (!Number.isFinite(nativeGeometry.notchDepth) || nativeGeometry.notchDepth <= 0)
       return;
   } catch { return; }
@@ -821,7 +829,7 @@ app.whenReady().then(async () => {
     // start dark, and the renderer reports the saved choice once it loads.
     nativeTheme.themeSource = "dark";
     if (await offerMoveToApplications()) return;
-    startNotchGlow();
+    void startNotchGlow();
     const token = await launchBackend();
     session.defaultSession.setPermissionCheckHandler(
       (contents, permission, requestingOrigin, details) => {

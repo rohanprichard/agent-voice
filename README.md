@@ -79,14 +79,13 @@ uv tool install "talktome-local @ git+https://github.com/rohanprichard/talktome"
 
 ## First-run setup
 
-The first start opens a setup window with six steps:
+The first start opens a setup window with five steps:
 
 1. **Welcome.** The window explains the call flow.
 2. **Microphone.** Select **Allow microphone**. macOS asks for permission.
 3. **ElevenLabs.** Enter an ElevenLabs API key, or select **Later** to use local speech.
 4. **Agent connection.** Select **Install**. This installs the agent skill and the `talktome` command.
-5. **Glow color.** Select the color that the call surface shows during a live call.
-6. **All set.** Ask your agent to call.
+5. **All set.** Ask your agent to call.
 
 You can skip a step with **Later**. Settings contains the same options.
 To run setup again, quit the app and run `npm run reset`.
@@ -201,7 +200,8 @@ Environment settings:
 npm run build:app
 ```
 
-This command freezes the Python server into one binary, draws the icon, compiles the notch helper, and runs electron-builder.
+This command freezes the Python server into one binary, draws the icon, and runs electron-builder.
+The native notch surface is off, so the build does not compile its helper. The call uses the pill.
 The result is `dist/app/TalkToMe-<version>-arm64.dmg` and a zip of the app for the updater.
 The script mounts the disk image after the build and examines its contents and its signature.
 To reuse the last frozen server when only the desktop code changed, run `npm run build:dmg`.

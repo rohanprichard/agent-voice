@@ -188,7 +188,16 @@ test("Dark is the default theme in every window", () => {
   const start = main.indexOf('nativeTheme.themeSource = "dark";');
   assert.ok(start > 0, "The main process must start in dark mode.");
   assert.ok(start < main.indexOf("window = new BrowserWindow("));
-  assert.ok(start < main.indexOf("startNotchGlow();"));
+  assert.ok(start < main.indexOf("void startNotchGlow();"));
+});
+
+test("The native notch is off, even when an old helper build is on disk", () => {
+  assert.match(main, /const NATIVE_NOTCH = false;/);
+  const glow = main.slice(main.indexOf("async function startNotchGlow()"));
+  const guard = glow.indexOf('if (!NATIVE_NOTCH || process.platform !== "darwin") return;');
+  assert.ok(guard > 0 && guard < glow.indexOf("existsSync(binary)"));
+  // Nothing at startup waits on the helper.
+  assert.doesNotMatch(main, /spawnSync/);
 });
 
 test("A missing or invalid saved theme starts dark, and System still works", () => {

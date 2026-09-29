@@ -34,9 +34,9 @@ jobs:
       - run: npm ci
       - name: Install the Electron binary
         run: test -d node_modules/electron/dist || node node_modules/electron/install.js
-      # build-app.sh compiles the notch helper. This shows the toolchain in the log.
-      - run: xcrun swiftc --version
 
+      # The native notch is off, so the release does not build its helper.
+      # TALKTOME_NOTCH=1 turns the helper build on.
       - run: sh packaging/build-app.sh
 
       - name: Start the server from the built app
