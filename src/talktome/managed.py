@@ -152,6 +152,12 @@ class ManagedSession:
         self.generation = 0
         self.voice_connection = None
         self.voice_warmup = None
+        # Set by the app to keep the call history.
+        self.history = None
+
+    def _record(self, event, options=None):
+        if self.history:
+            self.history.record(event, self, options)
 
     def snapshot(self):
         return {
@@ -236,6 +242,7 @@ class ManagedSession:
             # Made while it rings, so the first words play as soon as the user answers.
             if greeting:
                 self.greeting_audio = asyncio.create_task(self._prepare_greeting(greeting))
+            self._record("ringing")
             await self.changed()
             self.ringer = asyncio.create_task(self._ring_until_answered(self.ring))
             return self.snapshot()
@@ -264,6 +271,7 @@ class ManagedSession:
             self.status = "ready"
             self.ring = None
             await self.room.start()
+            self._record("answered")
             if ring["greeting"]:
                 await self.greet(ring["greeting"], self.greeting_audio)
             self.greeting_audio = None
@@ -279,6 +287,7 @@ class ManagedSession:
             self._stop_ringer()
             self._drop_greeting()
             self.ring = None
+            self._record("declined")
             await self._release()
             self.status = "idle"
             await self.changed()
@@ -370,6 +379,7 @@ class ManagedSession:
             return
         # Only if this is still the ring that was pending when the wait began.
         if self.ring and self.ring["id"] == ring["id"]:
+            self._record("missed")
             with contextlib.suppress(HTTPException):
                 await self.decline(ring["id"])
 
@@ -379,6 +389,8 @@ class ManagedSession:
         `close` holds the session lock while this runs, so no step may wait on
         speech, and one failed step must not leave the others undone.
         """
+        # Read before the fields below are cleared.
+        self._record("ended")
         voice_warmup, self.voice_warmup = self.voice_warmup, None
         voice_connection, self.voice_connection = self.voice_connection, None
         adapter, self.adapter = self.adapter, None
@@ -431,6 +443,7 @@ class ManagedSession:
             await adapter.close()
             self.status = "error"
             self.error = str(exc)
+            self._record("failed", options)
             await self.changed()
             raise HTTPException(400, str(exc)) from exc
         self.adapter = adapter

@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="/tokens.css" />
     <link rel="stylesheet" href="/styles.css" />
     <script type="module" src="/app.js"></script>
+    <script type="module" src="/calls-settings.js"></script>
   </head>
   <body>
     <div class="app" id="app">
@@ -162,6 +163,21 @@
               <button id="open-login-items" class="secondary-button hidden">
                 Open Login Items
               </button>
+            </section>
+            <section class="settings-card">
+              <h2>Call history</h2>
+              <label class="field-label" for="call-transcripts">Save call transcripts</label
+              ><select id="call-transcripts">
+                <option value="off">Off</option>
+                <option value="7d">7 days</option>
+                <option value="30d">30 days</option>
+              </select>
+              <p class="settings-note">
+                Transcripts stay on this Mac in a private file. When this is off,
+                TalkToMe saves only who called and when.
+              </p>
+              <p id="call-transcripts-status" class="settings-note" role="status"></p>
+              <button id="open-calls" class="secondary-button" type="button">Open Calls…</button>
             </section>
             </div>
             <section

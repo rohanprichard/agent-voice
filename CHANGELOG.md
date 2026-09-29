@@ -18,6 +18,10 @@ This file lists the changes that users see. The format follows
 - The notch call surface on Macs with a notch.
 - A release workflow builds the disk image and a zip when a `v*` tag is pushed.
 - A Homebrew cask for the future tap `rohanprichard/tap`.
+- The Calls window lists recent calls. You can call back Codex, Claude Code, Hermes, and OpenClaw sessions with no ring.
+- The menu bar shows a count of missed calls, and macOS shows a notification for each one.
+- The **Recent** menu calls back one of the last five callers.
+- Settings can keep call transcripts for 7 or 30 days. Transcripts are off by default.
 
 ### Changed
 

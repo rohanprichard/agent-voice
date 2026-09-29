@@ -40,6 +40,7 @@ const {
   loginItemState,
   shouldOfferMove,
 } = require("./install.cjs");
+const { createCalls } = require("./calls.cjs");
 
 app.setName("talktome");
 if (process.env.TALKTOME_DATA_DIR) {
@@ -291,6 +292,14 @@ if (!app.requestSingleInstanceLock()) app.quit();
 
 app.on("second-instance", () => {
   openSettings();
+});
+
+const calls = createCalls({
+  electron: require("electron"),
+  origin,
+  trusted,
+  onCallBack: () => sendToWindow("talktome:call-command", "callback"),
+  refreshTray: () => refreshTrayMenu(),
 });
 
 function trusted(url) {
@@ -600,6 +609,8 @@ function refreshTrayMenu() {
         label: "Open Settings",
         click: openSettings,
       },
+      ...calls.menuItems(),
+      { type: "separator" },
       {
         label: nativeNotch ? "Open transcript" : "Show call",
         enabled: callState.live && !callState.ring,
@@ -1258,6 +1269,7 @@ app.whenReady().then(async () => {
     // After sleep the microphone and the voice sockets can be dead without an
     // error. The window that owns the call checks them again.
     powerMonitor.on("resume", () => sendToWindow("talktome:resume"));
+    calls.start(token, tray);
     // The call can stay active when macOS hides its window. Show the call again
     // without changing the agent session or the audio in the main window.
     setInterval(() => {
