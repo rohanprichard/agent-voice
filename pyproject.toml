@@ -52,6 +52,10 @@ packages = ["src/talktome"]
 [tool.hatch.build.targets.wheel.force-include]
 "skills/talktome/SKILL.md" = "talktome/skills/talktome/SKILL.md"
 
+# The rest of the repository is the desktop app, which has no place in the package.
+[tool.hatch.build.targets.sdist]
+include = ["/src/talktome", "/skills/talktome", "/tests", "/LICENSE", "/NOTICE", "/README.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
