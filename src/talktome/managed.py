@@ -34,7 +34,7 @@ ANSWER_WAIT = RING_TIMEOUT + 5
 CODEX_SESSION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,399}")
 
 # Other agents own their ids. OpenClaw keys hold `+`, `@`, and `!`, for example
-# agent:main:whatsapp:direct:+15551234567, and remote ids are <pair>:<thread>.
+# agent:main:whatsapp:direct:+15551234567.
 MAX_SESSION_ID = 512
 
 
@@ -318,9 +318,8 @@ class ManagedSession:
 
         The call surface has the call id to hand; a terminal does not, and having
         to look it up first is the difference between a command someone will use
-        and one they will not. A remote caller passes ``expected_call_id`` and
-        ``expected_adapter`` so it can only ever end the call it owns, never a
-        later local one that started while this one was waiting.
+        and one they will not. The optional call and adapter values limit which
+        call this command can end.
         """
         # Read what to release under the lock, then release it outside. Handling a
         # ring means calling `decline`, which takes this same non-reentrant lock,

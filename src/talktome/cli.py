@@ -154,29 +154,6 @@ def end():
     return ask("end", {}, start=False)
 
 
-# Remote-bridge commands route to `talktome.remote.cli`. They are kept out of the
-# default path so a local call never imports the relay or WebSocket stack.
-REMOTE_BRIDGE_COMMANDS = frozenset(
-    {
-        "remote-setup",
-        "remote-status",
-        "remote-remove",
-        "remote-daemon",
-        "connector-setup",
-        "connector-status",
-        "connector-remove",
-        "relay-pair",
-        "relay-list",
-        "relay-revoke",
-        "relay-serve",
-        "remote-init",
-        "remote-up",
-        "remote-connect",
-        "remote-service",
-    }
-)
-
-
 def plugin_command(args, parser) -> int:
     from . import host_plugins
 
@@ -215,7 +192,6 @@ def main():
             "configure-agent",
             "skill",
             "plugin",
-            *sorted(REMOTE_BRIDGE_COMMANDS),
         ],
         default="serve",
         nargs="?",
@@ -223,10 +199,7 @@ def main():
     parser.add_argument(
         "target",
         nargs="?",
-        help=(
-            "For remote-connect, the server as user@host. "
-            "For remote-service and plugin, install, remove, or status."
-        ),
+        help="For plugin, install, remove, or status.",
     )
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--agent", choices=["codex", "claude", "hermes", "openclaw", "generic"], default="codex")
@@ -242,54 +215,6 @@ def main():
     parser.add_argument("--progress", action="store_true", help="Send a reply without ending the voice turn.")
     parser.add_argument("--host-url")
     parser.add_argument("--token-stdin", action="store_true", help="Read the host token from standard input.")
-    parser.add_argument(
-        "--remote",
-        action="store_true",
-        help="Route call, listen, reply, and end through the remote bridge daemon.",
-    )
-    parser.add_argument("--relay", help="The relay WebSocket URL for remote setup.")
-    parser.add_argument("--pair", help="The public pair identifier.")
-    parser.add_argument("--label", help="An optional label for a pair.")
-    parser.add_argument(
-        "--code-stdin", action="store_true", help="Read the agent pairing code from standard input."
-    )
-    parser.add_argument(
-        "--credential-stdin",
-        action="store_true",
-        help="Read the laptop credential from standard input.",
-    )
-    parser.add_argument(
-        "--request-id",
-        help="Reuse a request ID to retry one remote operation without running it twice.",
-    )
-    parser.add_argument("--relay-host", default="127.0.0.1", help="Relay bind address.")
-    parser.add_argument("--relay-port", type=int, default=8766, help="Relay bind port.")
-    parser.add_argument("--relay-file", help="Override the relay pair metadata file.")
-    parser.add_argument(
-        "--ssh-host",
-        help="How the laptop reaches the server over SSH, as user@host, for remote-init and connector-setup.",
-    )
-    parser.add_argument("--ssh-port", type=int, help="The SSH port of the server, when it is not 22.")
-    parser.add_argument(
-        "--remote-command",
-        help="How to run talktome on the server, for remote-connect. Defaults to talktome.",
-    )
-    parser.add_argument(
-        "--replace",
-        action="store_true",
-        help="Revoke the server's old pair and make a new one, for remote-init and remote-connect.",
-    )
-    parser.add_argument(
-        "--install-service",
-        action="store_true",
-        help="Also install the remote-up service on the server, for remote-connect.",
-    )
-    parser.add_argument("--json", action="store_true", help="Print one JSON line, for remote-init.")
-    parser.add_argument(
-        "--allow-network",
-        action="store_true",
-        help="Let the relay bind a non-loopback address. It has no TLS, so use a TLS proxy.",
-    )
     parser.add_argument(
         "--thread",
         help="The host session ID, gateway session key, or cooperative connection ID.",
@@ -312,13 +237,8 @@ def main():
         help="What the user sees while the call is ringing. Defaults to the project folder name.",
     )
     args = parser.parse_args()
-    if args.target and args.command not in {"remote-connect", "remote-service", "plugin"}:
+    if args.target and args.command != "plugin":
         parser.error(f"unrecognized arguments: {args.target}")
-
-    if args.remote or args.command in REMOTE_BRIDGE_COMMANDS:
-        from .remote.cli import run as remote_run
-
-        raise SystemExit(remote_run(args, parser))
 
     if args.command == "skill":
         from .agents import skill_source
@@ -397,7 +317,7 @@ def main():
             raise SystemExit(1) from None
         print(json.dumps(result, indent=2))
     else:
-        # A remote server installs only the core, and that install has no voice.
+        # The voice server needs the speech extra.
         if importlib.util.find_spec("faster_whisper") is None:
             print(
                 "The voice server needs the speech extra. "

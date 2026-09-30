@@ -49,16 +49,6 @@ The app reads requests from its data folder and from `/tmp/talktome-<uid>/reques
 - ElevenLabs recognition sends microphone audio to ElevenLabs. ElevenLabs voices send reply text to ElevenLabs.
 - The ElevenLabs key stays in memory, or in the system keychain if you select **Remember key**.
 
-### Remote bridge (experimental)
-
-The remote bridge connects an agent on a server to the app on your Mac through a relay that you host.
-Nobody tested it live yet.
-
-- The relay can read every message that it forwards. There is no end-to-end encryption.
-- The relay can also send its own calls and replies to either side. Run the relay only on a host that you trust.
-- The relay has no TLS. It binds only to loopback, unless you give `--allow-network`. Put it behind a TLS proxy for network use.
-- The relay stores pair credentials as SHA-256 hashes and compares them in constant time.
-
 ## Supported versions
 
 | Version | Security fixes |

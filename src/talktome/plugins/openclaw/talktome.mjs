@@ -1,8 +1,7 @@
 // Run the talktome command for the OpenClaw plugin.
 //
 // This file has no OpenClaw imports, so the TalkToMe tests can load it directly.
-// The command already knows whether this computer is the Mac or a server that
-// is paired with it through the remote bridge.
+// The command runs on the Mac that runs TalkToMe.
 
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -10,7 +9,7 @@ import os from "node:os";
 import path from "node:path";
 
 export const LISTEN_TIMEOUT = 25;
-// A ring lasts 30 seconds, and a remote call waits up to 60 for the laptop.
+// A call can start the app and wait for a 30-second ring.
 const CALL_TIMEOUT_MS = 100_000;
 const REPLY_TIMEOUT_MS = 60_000;
 
@@ -44,7 +43,7 @@ function isExecutable(file) {
   }
 }
 
-// remote-status also prints inbox lines, so read the first JSON object.
+// Read the first JSON object from the command output.
 export function firstJson(output) {
   const start = output.indexOf("{");
   if (start < 0) throw new TalkToMeError("talktome printed no result.");
@@ -66,13 +65,6 @@ export function firstJson(output) {
     }
   }
   throw new TalkToMeError("talktome printed a result that is not JSON.");
-}
-
-export function remoteSetting(value) {
-  const setting = String(value ?? "auto").trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(setting)) return true;
-  if (["0", "false", "no", "off"].includes(setting)) return false;
-  return null;
 }
 
 // Markdown and code do not read aloud well.
@@ -117,9 +109,8 @@ export function run(command, args, timeoutMs) {
 }
 
 export class TalkToMeClient {
-  constructor(command, remote) {
+  constructor(command) {
     this.command = command;
-    this.remote = remote;
   }
 
   static async discover(settings = {}, env = process.env) {
@@ -130,22 +121,16 @@ export class TalkToMeClient {
           "Install it with `uv tool install git+https://github.com/rohanprichard/talktome`.",
       );
     }
-    let remote = remoteSetting(settings.remote ?? env.TALKTOME_REMOTE);
-    if (remote === null) {
-      const status = firstJson(await run(command, ["remote-status"], 15_000));
-      remote = Boolean(status.configured) && status.role === "agent";
-    }
-    return new TalkToMeClient(command, remote);
+    return new TalkToMeClient(command);
   }
 
   async json(args, timeoutMs) {
-    const full = this.remote ? ["--remote", ...args] : args;
-    return firstJson(await run(this.command, full, timeoutMs));
+    return firstJson(await run(this.command, args, timeoutMs));
   }
 
   call(thread, greeting, name) {
     const args = ["call", "--agent", "openclaw", "--thread", thread, `--greeting=${greeting}`];
-    if (!this.remote) args.push("--connection", "cooperative");
+    args.push("--connection", "cooperative");
     if (name) args.push(`--name=${name}`);
     return this.json(args, CALL_TIMEOUT_MS);
   }

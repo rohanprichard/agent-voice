@@ -24,10 +24,10 @@ jobs:
       - run: uv run pytest -q
       # The Node tests use only built-in modules, so npm ci is not needed.
       - run: node --test tests/*.test.mjs
-      # A remote server installs the package without the speech extra.
+      # The command package installs without the speech extra.
       - name: Core install runs without the speech stack
         run: |
           uv venv "$RUNNER_TEMP/core"
           uv pip install --python "$RUNNER_TEMP/core/bin/python" .
           "$RUNNER_TEMP/core/bin/talktome" --help > /dev/null
-          TALKTOME_DATA_DIR="$RUNNER_TEMP/core-data" "$RUNNER_TEMP/core/bin/talktome" remote-status
+          TALKTOME_DATA_DIR="$RUNNER_TEMP/core-data" "$RUNNER_TEMP/core/bin/talktome" skill > /dev/null

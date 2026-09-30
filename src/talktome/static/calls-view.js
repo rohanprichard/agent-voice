@@ -4,7 +4,6 @@ const AGENTS = {
   hermes: "Hermes",
   openclaw: "OpenClaw",
   generic: "Agent",
-  remote: "Remote",
 };
 
 const OUTCOMES = {

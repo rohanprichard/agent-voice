@@ -2,8 +2,7 @@
 
 This file has no Hermes imports, so the TalkToMe tests can load it directly. The
 plugin runs in Hermes's own Python, which cannot import the talktome package, so
-every call goes through the command. The command already knows whether this
-computer is the Mac or a server paired with it.
+every call goes through the command on the Mac.
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ import shutil
 from pathlib import Path
 
 LISTEN_TIMEOUT = 25
-# A ring lasts 30 seconds, and a remote call waits up to 60 for the laptop.
+# A call can start the app and wait for a 30-second ring.
 CALL_TIMEOUT = 100
 REPLY_TIMEOUT = 60
 
@@ -46,7 +45,7 @@ def find_command(env=os.environ) -> str | None:
 
 
 def first_json(output: str) -> dict:
-    """The first JSON object in the output. remote-status also prints inbox lines."""
+    """The first JSON object in the output."""
     start = output.find("{")
     if start < 0:
         raise TalkToMeError("talktome printed no result.")
@@ -57,15 +56,6 @@ def first_json(output: str) -> dict:
     if not isinstance(value, dict):
         raise TalkToMeError("talktome printed a result that is not an object.")
     return value
-
-
-def remote_setting(value: str | None) -> bool | None:
-    value = (value or "auto").strip().lower()
-    if value in {"1", "true", "yes", "on"}:
-        return True
-    if value in {"0", "false", "no", "off"}:
-        return False
-    return None
 
 
 _FENCE = re.compile(r"```.*?(```|$)", re.DOTALL)
@@ -88,9 +78,8 @@ def speakable(text: str) -> str:
 
 
 class TalkToMeClient:
-    def __init__(self, command: str, remote: bool):
+    def __init__(self, command: str):
         self.command = command
-        self.remote = remote
 
     @classmethod
     async def discover(cls, env=os.environ) -> TalkToMeClient:
@@ -100,22 +89,14 @@ class TalkToMeClient:
                 "The talktome command is not installed on this computer. "
                 "Install it with `uv tool install git+https://github.com/rohanprichard/talktome`."
             )
-        remote = remote_setting(env.get("TALKTOME_REMOTE"))
-        if remote is None:
-            status = first_json(await run(command, ["remote-status"], timeout=15))
-            remote = bool(status.get("configured")) and status.get("role") == "agent"
-        return cls(command, remote)
-
-    def _args(self, *args: str) -> list[str]:
-        return ["--remote", *args] if self.remote else list(args)
+        return cls(command)
 
     async def _json(self, args: list[str], timeout: float) -> dict:
-        return first_json(await run(self.command, self._args(*args), timeout=timeout))
+        return first_json(await run(self.command, args, timeout=timeout))
 
     async def call(self, thread: str, greeting: str, name: str | None) -> dict:
         args = ["call", "--agent", "hermes", "--thread", thread, f"--greeting={greeting}"]
-        if not self.remote:
-            args += ["--connection", "cooperative"]
+        args += ["--connection", "cooperative"]
         if name:
             args.append(f"--name={name}")
         return await self._json(args, CALL_TIMEOUT)

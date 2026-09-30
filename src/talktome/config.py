@@ -2,6 +2,7 @@ import contextlib
 import os
 import secrets
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from platformdirs import user_data_path
 
@@ -30,7 +31,11 @@ def get_token() -> str:
 
 
 def base_url() -> str:
-    return os.environ.get("TALKTOME_URL", "http://127.0.0.1:8765").rstrip("/")
+    url = os.environ.get("TALKTOME_URL", "http://127.0.0.1:8765").rstrip("/")
+    parsed = urlsplit(url)
+    if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "::1", "localhost"}:
+        raise ValueError("Set TALKTOME_URL to a local HTTP address.")
+    return url
 
 
 def lock_path() -> Path:

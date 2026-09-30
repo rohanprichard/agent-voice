@@ -82,8 +82,8 @@ talktome configure-agent --agent openclaw --host-url ws://127.0.0.1:18789 --toke
 
 The app saves these settings in `agent-hosts.json` in its data folder, with mode `0600`.
 The file holds the token as plain text. The command output does not show the token.
-The app accepts loopback host URLs by default.
-A Hermes host on another computer needs HTTPS and `TALKTOME_ALLOW_REMOTE_AGENTS=1` in the app environment.
+The app accepts only loopback host URLs.
+The host must run on the Mac that runs TalkToMe.
 The OpenClaw adapter works only with a loopback Gateway.
 You cannot change host settings during a call.
 

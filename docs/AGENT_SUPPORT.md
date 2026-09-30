@@ -12,16 +12,10 @@ The new adapters need a live check before release. No real calls ran during this
 | Hermes Agent | Runs API for an existing API session | Experimental, requires server capabilities |
 | OpenClaw | Gateway protocol for an existing session key | Experimental, requires server capabilities |
 | Other hosts | Explicit `listen` and `reply` commands | Requires shell commands in the host |
-| Any supported host, remote server | Remote bridge daemon | Live check passed with Hermes; see [remote bridge](REMOTE_BRIDGE.md) |
 | Hermes Agent, OpenClaw | Host plugin with a `talktome_call` tool | Hermes passed live calls; see [host plugins](HOST_PLUGINS.md) |
 
 A host plugin is the preferred connection for Hermes and OpenClaw.
 The plugin runs `listen` and `reply` inside the host, so the model does not spend a model call on each command.
-
-The remote bridge runs the same cooperative commands through an agent-side
-daemon and a self-hosted relay. The laptop keeps the microphone and speech, and
-only text and call events cross the relay. Use `talktome --remote` in place of
-the local commands when the server has a saved bridge configuration.
 
 The Hermes API server and the Hermes CLI use one state database.
 A `/v1/runs` request with the ID of a terminal session loads and writes that same session.
@@ -52,7 +46,7 @@ This path needs no Hermes server token. Hermes must run `listen` and `reply` thr
 Use the external Hermes adapter only for an existing API session.
 For an existing OpenClaw chat with local shell access, use `--agent openclaw --connection cooperative`.
 The shell must run on the Mac that runs TalkToMe.
-Installing the skill on this Mac does not install it on a remote Gateway.
+The host shell must run on the Mac that runs TalkToMe.
 
 The skill requires subagents for extended work during calls unless the user requests direct work.
 The main agent handles conversation and call commands.
@@ -86,7 +80,7 @@ An exact retry with the same item ID does not repeat the speech.
 ## Configure external hosts
 
 Run `talktome providers` to see the local configuration status.
-This command does not prove that a remote host accepts connections.
+This command shows the saved local host settings.
 The external adapters require host servers that the user already configured.
 
 Give a token through standard input, not a command argument:
@@ -101,10 +95,7 @@ The file has mode `0600`. It contains a plaintext token and only the current use
 The commands return the host URL without the token.
 Saved settings work when Finder starts the app without shell environment variables.
 
-The default accepts loopback hosts. A remote host requires HTTPS or WSS and `TALKTOME_ALLOW_REMOTE_AGENTS=1` in the app environment.
-The OpenClaw adapter works only with a loopback Gateway, such as `ws://127.0.0.1:18789`.
-A remote `wss://` Gateway requires device pairing, and TalkToMe does not do device pairing.
-Thus, `TALKTOME_ALLOW_REMOTE_AGENTS=1` does not make a remote OpenClaw Gateway work.
+The adapters accept only loopback hosts. An OpenClaw Gateway can use `ws://127.0.0.1:18789`.
 A host URL cannot contain credentials, query parameters, or a fragment.
 
 ```sh

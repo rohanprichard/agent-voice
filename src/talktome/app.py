@@ -24,7 +24,6 @@ from .config import data_dir, get_token
 from .cooperative import CooperativeAdapter
 from .external_adapters import configure_external_provider, external_provider_status
 from .managed import ManagedSession
-from .remote.connector import start_connector
 from .room import Room
 from .smart_turn import MAX_AUDIO_BYTES, SmartTurn, SmartTurnUnavailable
 from .speech import MODELS, Speech
@@ -134,7 +133,6 @@ def create_app(*, token=None, speech=None):
     turn_setup_task = None
     turn_lock = asyncio.Lock()
     smart_turn_enabled = engine.settings().get("smart_turn_enabled", True)
-    remote_connector = None
 
     def finished(task):
         tasks.discard(task)
@@ -169,8 +167,6 @@ def create_app(*, token=None, speech=None):
             setup_task = background(asyncio.to_thread(engine.setup, saved))
         background(watch_inbox())
         background(history.prune_daily())
-        if remote_connector is not None:
-            background(remote_connector.run())
         yield
         await managed.close()
         await timing_history.flush()
@@ -248,12 +244,6 @@ def create_app(*, token=None, speech=None):
             "voice": voice,
             "managed": managed.snapshot(),
         }
-
-    @app.get("/v1/remote")
-    async def remote_status():
-        if remote_connector is None:
-            return {"configured": False}
-        return {"configured": True, **remote_connector.status()}
 
     def sse(kind, data, event_id=None):
         head = f"id: {event_id}\n" if event_id is not None else ""
@@ -502,12 +492,7 @@ def create_app(*, token=None, speech=None):
         speech_problem=speech_problem,
     )
     app.state.managed = managed
-    # Opt-in only: without a private laptop configuration this is None, and local
-    # calls behave exactly as they did before the remote bridge existed.
-    remote_connector = start_connector(managed)
-    app.state.remote_connector = remote_connector
     history = CallHistory(data_dir() / "calls")
-    history.remote_prefix = f"{remote_connector.pair}:" if remote_connector else None
     managed.history = history
     app.include_router(call_routes(managed, history))
 

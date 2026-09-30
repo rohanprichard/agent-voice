@@ -9,8 +9,6 @@ A new request closes the details. State updates for the same request keep the de
 
 The Python wheel now includes the TalkToMe skill from its source file.
 The skill lookup supports the Python package, frozen app, and repository.
-Remote setup now sends the custom relay file path to both initialization and service installation.
-The printed commands also retain that path.
 
 Syntax and lint checks passed. No automated tests, app build, or calls ran.
 The Hermes shell stall remains unresolved. The earlier command stopped before it called TalkToMe.
@@ -25,7 +23,6 @@ This path uses the current chat and needs no Hermes API server.
 
 The local Hermes, OpenClaw, and Codex skill copies now contain these instructions.
 The OpenClaw skill uses its default shared directory. No local OpenClaw configuration existed before this installation.
-Remote hosts still need their own skill installation and a separate transport to the laptop.
 The installed command lists `--agent hermes`, cooperative mode, `listen`, and `reply` in its help output.
 No call, app build, or automated test ran for this change.
 

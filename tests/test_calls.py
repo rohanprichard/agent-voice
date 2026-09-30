@@ -118,15 +118,6 @@ def test_a_ring_left_by_a_stopped_app_loads_as_missed(tmp_path):
     assert history(tmp_path).records[0]["outcome"] == "missed"
 
 
-def test_remote_calls_are_marked_remote(tmp_path):
-    store = history(tmp_path)
-    store.remote_prefix = "pair-1:"
-    store.record("ringing", FakeRing(agent="claude", thread="pair-1:thread"))
-    entry = store.list()[0]
-    assert entry["agent"] == "remote"
-    assert "cannot call it back" in entry["callback_reason"]
-
-
 def test_the_history_keeps_the_last_500_calls(tmp_path):
     store = history(tmp_path)
     for index in range(calls.MAX_CALLS + 5):
@@ -191,10 +182,9 @@ def test_delete_and_clear(tmp_path):
     assert history(tmp_path).records == []
 
 
-def test_call_back_is_off_for_generic_and_remote():
+def test_call_back_is_off_for_generic():
     reason = calls.callback_reason
     assert reason({"agent": "generic", "session_id": "x"})
-    assert reason({"agent": "remote", "session_id": "p:x"})
     assert reason({"agent": "claude", "session_id": "my-connection"})
     assert reason({"agent": "claude", "session_id": CLAUDE_ID}) is None
     assert reason({"agent": "codex", "session_id": "t-1"}) is None

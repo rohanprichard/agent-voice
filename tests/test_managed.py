@@ -817,8 +817,8 @@ def test_other_agents_refuse_whitespace_control_characters_and_long_ids(thread):
     assert managed_module.valid_session_id(thread, "openclaw") is False
 
 
-def test_other_agents_accept_a_remote_pair_id_up_to_the_limit():
-    assert managed_module.valid_session_id("pair-1:thread-1", "hermes") is True
+def test_other_agents_accept_an_id_up_to_the_limit():
+    assert managed_module.valid_session_id("agent:thread-1", "hermes") is True
     assert managed_module.valid_session_id("x" * 512, "generic") is True
 
 

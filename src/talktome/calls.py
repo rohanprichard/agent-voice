@@ -51,8 +51,6 @@ def callback_reason(entry):
     """Why this call cannot be called back, or None when it can."""
     agent = entry.get("agent")
     session = entry.get("session_id") or ""
-    if agent == "remote":
-        return "A remote session can call you, but you cannot call it back."
     if agent == "generic":
         return "A generic session gives TalkToMe no way to reach it."
     if agent == "codex" and not CODEX_SESSION_ID.fullmatch(session):
@@ -72,9 +70,6 @@ class CallHistory:
         self.settings_path = directory / "settings.json"
         self.records = []
         self.current = None
-        # Remote calls use <pair>:<thread> ids. The app sets the prefix when a
-        # remote bridge is configured.
-        self.remote_prefix = None
         self.mode = "off"
         self.load()
 
@@ -127,8 +122,6 @@ class CallHistory:
             options = options or managed.options or {}
             session = options.get("thread_id")
             agent = options.get("agent") or "generic"
-            if self.remote_prefix and (session or "").startswith(self.remote_prefix):
-                agent = "remote"
             entry = {
                 "id": str(uuid4()),
                 "agent": agent,

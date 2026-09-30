@@ -513,18 +513,6 @@ def test_the_skill_goes_to_the_hermes_home_that_hermes_names(tmp_path, monkeypat
     assert agents.skill_targets(tmp_path)["hermes"] == profile / "skills" / "talktome" / "SKILL.md"
 
 
-def test_the_skill_sends_a_paired_server_across_the_bridge():
-    # A Hermes agent on a server once read "run the commands on the Mac", went
-    # looking for a telephony tool, and then tried to build TalkToMe to learn how.
-    text = agents.skill_source().read_text()
-    description = text.split("description:")[1].split("\n")[0]
-    assert "not a phone call" in description
-    assert "remote bridge" in description
-    local_or_remote = text.split("## Local or remote")[1].split("\n## ")[0]
-    assert "talktome remote-status" in local_or_remote
-    assert "add `--remote`" in local_or_remote
-
-
 def test_the_skill_offers_a_call_back_for_long_work():
     # A user who has to stay quiet while the agent works for minutes will hang up.
     text = agents.skill_source().read_text()

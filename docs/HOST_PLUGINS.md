@@ -1,7 +1,7 @@
 # Host plugins
 
 Date: September 29, 2026.
-Status: The Hermes plugin passed live calls. The OpenClaw plugin passed its unit tests and a live ring, but its agent runs are not proven yet. See [What was tested](#what-was-tested).
+Status: The local plugins need live call checks.
 
 ## Why a plugin
 
@@ -13,10 +13,7 @@ A plugin moves that loop into the host.
 The model calls one tool to ring the user. After the user answers, the plugin runs `listen` and `reply` itself.
 Each spoken turn reaches the model as a normal message, and the model only answers.
 
-The plugins use the `talktome` command, so they work in the same two places as the skill:
-
-- On the Mac that runs TalkToMe.
-- On a server that is paired with the Mac through the [remote bridge](REMOTE_BRIDGE.md). The plugin reads `talktome remote-status` and adds `--remote`.
+The plugins use the `talktome` command on the Mac that runs TalkToMe.
 
 ## Install
 
@@ -60,7 +57,7 @@ The plugin is a Hermes platform named `talktome`. A call is a chat on that platf
 | `show_reasoning`, `long_running_notifications`, `busy_ack_detail` | `false` | Status text is not speech. |
 
 The platform sets a home channel, so the gateway does not ask for `/sethome` on the first call.
-The bridge credential and the user's answer to the ring authorize each turn, so the platform uses upstream authorization.
+The user's answer to the ring authorizes each turn, so the platform uses upstream authorization.
 
 ## OpenClaw
 
@@ -76,23 +73,3 @@ The plugin registers the two tools. The tool factory receives the caller's sessi
 - The call's chat and the original chat share one session. If both chats send a message at the same time, the two turns can overlap. In practice the first voice turn starts after the greeting, when the tool call has already finished.
 - A Hermes turn that the user talks over is not stopped. Hermes decides what to do with the new message, based on its `busy_input_mode`.
 - The plugins depend on host internals: the Hermes session store and the OpenClaw extension API. A host update can change them. `hermes plugins doctor talktome` checks the Hermes plugin.
-
-## What was tested
-
-Hermes Agent v0.20.4 on Ubuntu 24.04, paired with a Mac through the SSH bridge:
-
-- A one-shot cron job asked Hermes to call. The Mac rang, and a script answered and sent text turns.
-- "What is two plus two?" returned "Two plus two is four." as the final reply.
-- A question that needed a terminal command returned the disk space in about 7 seconds. No tool progress lines were spoken.
-- A second turn in the same call remembered the first turn.
-- A hang-up on the Mac ended the plugin's loop at once.
-
-Still to check with Hermes:
-
-- A call placed from a real chat, where the session stays live after the tool call.
-- A spoken interruption during a long tool run.
-
-OpenClaw 2026.2.15 on the same server:
-
-- The plugin logic passed unit tests with a fake laptop and a fake agent run.
-- The live agent runs could not be checked. The OpenClaw agent on that server fails every turn with `HTTP 401: User not found.` from OpenRouter, before any TalkToMe code runs.

@@ -48,9 +48,7 @@ These are proposed launch settings, not measured performance limits.
 Keep call operations sequential so a reply cannot precede its listen result.
 
 For a local call, the MCP process and TalkToMe app must run on the same Mac.
-For a remote host, the process must use the configured remote bridge.
-A loopback address on a remote server addresses that server.
-See [remote bridge](../../REMOTE_BRIDGE.md).
+The host shell must run on the Mac that runs TalkToMe.
 
 ## Hermes configuration
 
@@ -286,8 +284,6 @@ See [TalkToMe adapter](../../../src/talktome/external_adapters.py).
 
 OpenClaw permits a direct loopback backend client to omit device identity when it uses a shared Gateway token or password.
 The exception requires `client.id:"gateway-client"` and `client.mode:"backend"`.
-Remote clients follow the normal device and scope rules.
-The current TalkToMe adapter supplies no device signature, so a remote URL and token do not establish remote compatibility.
 See [Gateway handshake](https://docs.openclaw.ai/gateway/protocol/handshake).
 
 `chat.send` targets the selected session and supports explicit queue modes.

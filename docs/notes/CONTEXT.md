@@ -1,17 +1,5 @@
 # Current context
 
-## Source update: September 28, 2026 — remote bridge
-
-[Remote bridge](../REMOTE_BRIDGE.md) adds a self-hosted relay, an agent-side daemon,
-and an opt-in laptop connector. The bridge carries the four cooperative commands
-over bounded text frames; microphone audio stays on the laptop. The local JSON
-Lines bridge and the local inbox are unchanged, and the connector starts only
-when a private laptop configuration exists.
-The pairing code is long-lived until revocation and is stored only as a hash on
-the relay. The laptop keeps a bounded command journal for mutating request IDs.
-This change needs live checks: no relay, call, app build, or credential ran.
-Static syntax, Ruff, and whitespace checks only.
-
 ## Source update: September 28, 2026
 
 [Call latency](../LATENCY.md) describes early transcription commits, the separate speech worker, and output connection reuse.

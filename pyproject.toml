@@ -10,8 +10,7 @@ readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Rohan Richard" }]
 requires-python = ">=3.11,<3.14"
-# The core is what a remote server needs: the command, the relay, and the daemon.
-# The desktop app's voice server also needs the speech extra.
+# The desktop app's voice server needs the speech extra.
 dependencies = [
   "fastapi>=0.115,<1",
   "uvicorn>=0.34,<1",
@@ -34,8 +33,6 @@ Issues = "https://github.com/rohanprichard/talktome/issues"
 
 [project.scripts]
 talktome = "talktome.cli:main"
-talktome-relay = "talktome.remote.relay:main"
-talktome-remote = "talktome.remote.daemon:main"
 
 [dependency-groups]
 dev = [

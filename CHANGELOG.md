@@ -8,11 +8,6 @@ This file lists the changes that users see. The format follows
 ### Added
 
 - Hermes and OpenClaw can call through cooperative commands or their host APIs.
-- The remote bridge (experimental) connects an agent on a server to the app on a Mac.
-- `talktome remote-connect user@server` pairs the laptop with a server over SSH in one step.
-- The laptop connector opens and restarts its own SSH tunnel to the relay on the server.
-- `talktome remote-service install` keeps `talktome remote-up` running on the server, with systemd or launchd.
-- `talktome connector-status` shows the connector and tunnel state from the running app.
 - Smart Turn decides when the user stops speaking.
 - The user can interrupt the voice by speaking.
 - The notch call surface on Macs with a notch.
@@ -39,6 +34,7 @@ This file lists the changes that users see. The format follows
 - Managed sessions, where TalkToMe started Codex or Claude Code itself, and the `/v1/managed/start` route.
 - The `/v1/agents`, `/v1/connection`, `/v1/call/start`, and `/v1/conversation/clear` routes.
 - The browser-only pages of the main window: the conversation page, the browser setup flow, the sample call, and the pair screen.
+- The experimental remote bridge, its commands, and its server components.
 
 ### Fixed
 
@@ -53,11 +49,6 @@ This file lists the changes that users see. The format follows
 - The app reads the `/tmp` request folder only if the user owns it, and replies do not follow symbolic links.
 - Command lookups no longer block the server.
 - Approval requests show in the call surface. Before, each request waited 180 seconds and was denied.
-- The relay refuses a network bind address unless you give `--allow-network`.
-- `remote-up` stops its relay when it gets `SIGTERM`, `SIGHUP`, or `SIGINT`, and starts the relay again when it stops.
-- `remote-init --replace` and `remote-remove` revoke the old pair, so the old laptop credential stops working.
-- `remote-init` puts the relay port in a relay URL that has none, and accepts only 127.0.0.1 for its own relay.
-- A remote connection ID can contain any printable character, such as the `+`, `@`, and `!` in OpenClaw session keys.
 
 ## 0.1.0
 

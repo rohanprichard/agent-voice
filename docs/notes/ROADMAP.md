@@ -6,14 +6,6 @@ chosen, and what was rejected in favour of it.
 
 Updated: September 28, 2026.
 
-## Remote agent bridge
-
-The project approved a remote bridge with a long-lived pairing code.
-The code remains valid until the user revokes or replaces it.
-[Remote bridge plan](REMOTE_BRIDGE_PLAN.md) defines the relay, device roles, cooperative commands, and recovery rules.
-The first version is implemented. It needs a source review.
-No relay deployment, app build, or live calls are part of this step.
-
 ## Agent connections and speech control
 
 The source now includes cooperative commands, experimental external adapters, and a persistent Codex queue.
@@ -154,8 +146,6 @@ The desktop app remains the main product.
 After setup, a compact pill overlays the user's desktop, similar to HeyClicky.
 The user's existing applications remain the work area. A large Canvas window is not the default interface.
 Settings opens a larger window.
-A future headless service can run beside an agent on a remote server.
-That service still needs a client for microphone input and audio playback.
 
 ## Latest decisions: session attachment
 
@@ -687,20 +677,12 @@ Status: Future implementation, separate from view and annotation permissions.
 - Record action results without retaining unnecessary screen content or secrets.
 - Stop safely when the screen changes or the target is ambiguous.
 
-### Phase 7: Headless service and distribution
+### Phase 7: Desktop distribution
 
 Status: Requested future design and implementation work.
 
-- Document the existing backend path that runs without Electron.
-- Define a remote service beside the agent, with a separate audio client.
-- Define server-side provider secrets without a dependency on the desktop keychain.
-- Define encrypted transport, scoped credentials, pairing, reconnection, and cancellation.
-- Keep the current loopback service private until remote access controls exist.
-- Define single-user deployment before multi-user rooms or shared storage.
 - Package the Python runtime for desktop installation.
 - Test desktop behavior on Linux and Windows before claiming support.
-
-The remote service must not imply access to a local microphone or screen without a connected client.
 
 ### Optional research: faster screen decisions
 

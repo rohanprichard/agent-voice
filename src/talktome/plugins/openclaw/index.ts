@@ -167,7 +167,7 @@ export default {
                 log(`Call ${thread} ended.`);
                 if (live === call) live = null;
               });
-              return result({ answered: true, call: thread, remote: client.remote });
+              return result({ answered: true, call: thread });
             } catch (error) {
               const message = error instanceof TalkToMeError ? error.message : String(error);
               return result({ answered: false, error: message });

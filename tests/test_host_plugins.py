@@ -110,7 +110,6 @@ def plugin(monkeypatch):
 
 @dataclass
 class FakeClient:
-    remote: bool = True
     replies: list = field(default_factory=list)
 
     async def reply(self, thread, call_id, turn_id, item_id, text, final):
@@ -244,13 +243,6 @@ def test_markdown_and_code_are_not_read_aloud():
     assert client.speakable("Open https://example.com/a now") == "Open a link now"
 
 
-def test_remote_status_is_read_past_its_inbox_lines():
-    output = 'inbox: /x\nfallback inbox: /y\n{"configured": true, "role": "agent"}\n'
-    assert client.first_json(output) == {"configured": True, "role": "agent"}
-    with pytest.raises(client.TalkToMeError):
-        client.first_json("nothing here")
-
-
 @pytest.fixture
 def echo_command(tmp_path):
     script = tmp_path / "talktome"
@@ -259,33 +251,16 @@ def echo_command(tmp_path):
         "import json, sys\n"
         "if 'fail' in sys.argv:\n"
         "    print('The laptop is offline.', file=sys.stderr); sys.exit(1)\n"
-        "if 'remote-status' in sys.argv:\n"
-        "    print('inbox: /x'); print(json.dumps({'configured': True, 'role': 'agent'})); sys.exit(0)\n"
         "print(json.dumps({'argv': sys.argv[1:]}))\n"
     )
     script.chmod(0o755)
     return str(script)
 
 
-def test_a_paired_server_sends_every_command_across_the_bridge(echo_command):
-    async def scenario():
-        found = await client.TalkToMeClient.discover({"TALKTOME_COMMAND": echo_command})
-        assert found.remote is True
-        argv = (await found.call("hermes-1", "-Hi there", None))["argv"]
-        assert argv[:2] == ["--remote", "call"]
-        # A greeting that starts with a dash is still one value.
-        assert "--greeting=-Hi there" in argv
-        assert "--connection" not in argv
-        reply = (await found.reply("hermes-1", "c", "t", "i", "Hello", final=False))["argv"]
-        assert reply[0] == "--remote" and reply[-1] == "--progress"
-
-    asyncio.run(scenario())
-
-
 def test_on_the_mac_a_call_is_cooperative(echo_command):
     async def scenario():
         local = await client.TalkToMeClient.discover(
-            {"TALKTOME_COMMAND": echo_command, "TALKTOME_REMOTE": "false"}
+            {"TALKTOME_COMMAND": echo_command}
         )
         argv = (await local.call("hermes-1", "Hi", "Deploy"))["argv"]
         assert argv[0] == "call"

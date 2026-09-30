@@ -6,7 +6,7 @@ TalkToMe keeps a short record of each call on this Mac. It does not send the his
 
 Each call has one record with these fields:
 
-- The agent type: `codex`, `claude`, `hermes`, `openclaw`, `generic`, or `remote`.
+- The agent type: `codex`, `claude`, `hermes`, `openclaw`, or `generic`.
 - The session or thread ID, the caller name, and the project folder.
 - The times when the ring started, when you answered, and when the call ended.
 - The duration and the outcome: `answered`, `missed`, `declined`, or `failed`.
@@ -49,7 +49,7 @@ Your first sentence goes to the agent after this line: `[TalkToMe] The user call
   Claude runs without a terminal, so it denies a tool that needs permission, unless your Claude settings allow that tool.
   The session ID must be a real Claude Code session ID, not a connection ID.
 - **Hermes and OpenClaw:** The app opens the saved session through the configured host.
-- **Generic and remote calls:** Call back is not available. TalkToMe has no way to reach these sessions.
+- **Generic calls:** Call back is not available. TalkToMe has no way to reach these sessions.
 
 Only one call can be live. Call back does not start when another call is live or ringing.
 

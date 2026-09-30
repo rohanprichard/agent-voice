@@ -131,9 +131,7 @@ Progress messages do not end the turn.
 Each adapter declares support for progress, resume, interruption, approvals, and terminal attachment.
 Unavailable features must remain visible as unavailable.
 
-The controller can later run on a remote server.
-The desktop client still handles the local microphone, playback, and screen permissions.
-Remote deployment requires authenticated, encrypted transport and explicit pairing before public access.
+The desktop client handles the local microphone, playback, and screen permissions.
 
 ## What the app should speak
 

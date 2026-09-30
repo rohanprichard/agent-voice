@@ -75,7 +75,6 @@ Do not commit `NATIVE_NOTCH = true`.
 | `native/` | The Swift notch surface. It is off in the app. |
 | `src/talktome/` | The local server, speech, and agent adapters |
 | `src/talktome/static/` | The onboarding, settings, and call pages |
-| `src/talktome/remote/` | The experimental remote bridge |
 | `skills/talktome/` | The skill that tells an agent how to call |
 | `docs/` | User and contributor documentation |
 | `docs/notes/` | Development notes. They can be out of date. |

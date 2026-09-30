@@ -19,7 +19,6 @@ class FakeClient {
   constructor(listens) {
     this.listens = listens;
     this.replies = [];
-    this.remote = true;
   }
 
   async listen() {
@@ -153,7 +152,7 @@ test("a laptop that keeps failing ends the call", async () => {
   let listens = 0;
   const failing = () => {
     listens += 1;
-    throw new TalkToMeError("No cooperative remote call is active.");
+    throw new TalkToMeError("No cooperative call is active.");
   };
   const client = new FakeClient([failing, failing, failing, failing, failing]);
   const call = new VoiceCall({ thread: "openclaw-1", client, runAgent: async () => ({}), sleep: async () => {} });
@@ -167,12 +166,6 @@ test("markdown and code are not read aloud", () => {
   assert.equal(speakable(text), "Result Disk: 163 GB free See the docs Done.");
 });
 
-test("remote-status is read past its inbox lines", () => {
-  const output = 'inbox: /x\nfallback inbox: /y\n{"configured": true, "role": "agent", "note": "a } b"}\n';
-  assert.deepEqual(firstJson(output), { configured: true, role: "agent", note: "a } b" });
-  assert.throws(() => firstJson("nothing"), TalkToMeError);
-});
-
 function echoCommand() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "talktome-openclaw-"));
   const script = path.join(dir, "talktome");
@@ -182,7 +175,6 @@ function echoCommand() {
       "#!/usr/bin/env node",
       "const argv = process.argv.slice(2);",
       "if (argv.includes('fail')) { console.error('The laptop is offline.'); process.exit(1); }",
-      "if (argv.includes('remote-status')) { console.log('inbox: /x'); console.log(JSON.stringify({configured: true, role: 'agent'})); process.exit(0); }",
       "console.log(JSON.stringify({argv}));",
     ].join("\n"),
   );
@@ -190,17 +182,8 @@ function echoCommand() {
   return script;
 }
 
-test("a paired server sends every command across the bridge", async () => {
-  const client = await TalkToMeClient.discover({}, { TALKTOME_COMMAND: echoCommand() });
-  assert.equal(client.remote, true);
-  const { argv } = await client.call("openclaw-1", "-Hi there", null);
-  assert.deepEqual(argv.slice(0, 4), ["--remote", "call", "--agent", "openclaw"]);
-  assert.ok(argv.includes("--greeting=-Hi there"));
-  assert.ok(!argv.includes("--connection"));
-});
-
 test("on the Mac a call is cooperative", async () => {
-  const client = await TalkToMeClient.discover({ command: echoCommand(), remote: "false" });
+  const client = await TalkToMeClient.discover({ command: echoCommand() });
   const { argv } = await client.call("openclaw-1", "Hi", "Deploy");
   assert.equal(argv[0], "call");
   assert.deepEqual(argv.slice(-3), ["--connection", "cooperative", "--name=Deploy"]);

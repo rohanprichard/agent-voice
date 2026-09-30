@@ -24,6 +24,8 @@ The menu-bar icon opens Settings and gives controls to answer, decline, mute, an
 - A Mac with Apple silicon (arm64) and macOS 14 Sonoma or later.
 - One agent host: Codex, Claude Code, Hermes Agent, OpenClaw, or another host that can run shell commands.
 
+The agent commands must run on the Mac that runs TalkToMe.
+
 ## Install
 
 ### Disk image
@@ -67,15 +69,6 @@ npm start
 
 `npm start` runs `uv sync --frozen` if the Python environment is missing. Then it starts Electron.
 To build the disk image, see [Build the disk image](#build-the-disk-image).
-
-### Server install for remote calls
-
-An agent on another server can ring the app through the [remote bridge](#remote-bridge-experimental).
-On that server, install only the command. It has no speech libraries:
-
-```sh
-uv tool install "talktome-local @ git+https://github.com/rohanprichard/talktome"
-```
 
 ## First-run setup
 
@@ -128,19 +121,6 @@ Run `talktome providers` to see the connection methods that are ready.
 
 [Agent protocol](docs/AGENT_API.md) gives the commands, the ring flow, and the local HTTP interface.
 
-### Remote bridge (experimental)
-
-The remote bridge lets an agent on another server ring the laptop.
-Only text and call events cross the bridge. Microphone audio stays on the laptop.
-The setup uses SSH:
-
-1. Install talktome on the server: `uv tool install "talktome-local @ git+https://github.com/rohanprichard/talktome"`.
-2. On the laptop, run `talktome remote-connect user@server --install-service`.
-3. Restart TalkToMe.
-
-The app opens an SSH tunnel to the server itself, so SSH must log in with a key and no password prompt.
-This feature is experimental. See [remote bridge](docs/REMOTE_BRIDGE.md).
-
 ## During a call
 
 After the agent finishes its reply, speak to start the next turn.
@@ -163,7 +143,7 @@ The **Recent** menu calls back one of the last five callers.
 | Codex | Joins the thread again through its terminal. If no terminal holds the thread, **Open in Terminal** runs `codex resume`. |
 | Claude Code | Runs `claude -p --resume` for each turn. Claude denies a tool that needs permission, unless your Claude settings allow it. |
 | Hermes, OpenClaw | Uses the saved session. |
-| Generic, remote | Not available. |
+| Generic | Not available. |
 
 Transcripts are off by default. Settings can keep them for 7 or 30 days.
 See [call history](docs/CALLS.md) for what the app stores and how to delete it.
@@ -199,7 +179,7 @@ The app connects to the network for these purposes only:
 - Hugging Face, to download Whisper and the Smart Turn model.
 - GitHub, to download the Kokoro model and voice file.
 - ElevenLabs, only if you select an ElevenLabs service. ElevenLabs recognition sends microphone audio. ElevenLabs voice sends reply text. Service charges and the provider's retention rules apply.
-- A Hermes or OpenClaw host, or a relay, only if you configure one.
+- A Hermes or OpenClaw host on this Mac, only if you configure one.
 
 The agent receives the text of what you say. The agent's provider and tools have their own data rules.
 The cooperative command files contain conversation text.
@@ -211,11 +191,10 @@ Environment settings:
 | --- | --- |
 | `TALKTOME_DATA_DIR` | Change the local data directory |
 | `TALKTOME_PORT` | Change the desktop server port |
-| `TALKTOME_URL` | Set the server address for external clients |
+| `TALKTOME_URL` | Set the local server address for the command |
 | `TALKTOME_TOKEN` | Supply an existing shared token |
 | `TALKTOME_RELOAD` | Restart the server when Python files change. Development only. |
 | `TALKTOME_FLOATING_CALL` | Set to `0` to turn off the call window. The call then has no controls on screen. |
-| `TALKTOME_ALLOW_REMOTE_AGENTS` | Set to `1` to permit a Hermes host that is not on this Mac. The URL must use HTTPS. |
 
 ## Build the disk image
 

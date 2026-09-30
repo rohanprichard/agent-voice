@@ -1,6 +1,6 @@
 ---
 name: talktome
-description: Start a live TalkToMe voice call with the user when they say call me, ring me, talk to me, or talk_to_me. This is a desktop voice call, not a phone call. It works on the user's Mac, and on a server that is paired with the Mac through the TalkToMe remote bridge. Use shell commands.
+description: Start a live TalkToMe voice call with the user when they say call me, ring me, talk to me, or talk_to_me. This is a desktop voice call on the user's Mac. Use shell commands.
 ---
 
 # TalkToMe
@@ -25,13 +25,10 @@ The TalkToMe plugin then runs the call. Each thing the user says arrives as a no
 Do not run `listen` or `reply` during a plugin call.
 Use `talktome_end` when the user asks to end the call, or to call back later with a result. See [Do not keep the user waiting](#do-not-keep-the-user-waiting).
 
-## Local or remote
+## Run on the Mac
 
-Run `talktome remote-status` first.
-If it shows `"configured": true` with `"role": "agent"`, this computer is a server that is paired with the user's Mac.
-Then add `--remote` to every `call`, `listen`, `reply`, and `end` command in this skill, and follow [Call across the remote bridge](#call-across-the-remote-bridge).
-Otherwise, the commands must run on the Mac that runs TalkToMe.
-If the terminal runs on another computer that has no bridge, state that limit and stop.
+Run the commands on the Mac that runs TalkToMe.
+If the terminal runs on another computer, state that limit and stop.
 
 Start the call before other work. Do not clone, build, or test TalkToMe to learn how to call.
 
@@ -147,47 +144,9 @@ Reuse the same item identifier and text only to retry that exact reply.
 The main agent must keep listening while subagents do extended work.
 If a worker finishes after its voice turn ends, retain its result. Use the result when the current conversation needs it.
 
-## Call across the remote bridge
-
-Use the remote bridge only when this server already has a saved bridge configuration.
-Check it first with `talktome remote-status`.
-Do not run `remote-setup` or `remote-daemon` unless the user asks.
-The pairing code is a credential. Read it from standard input; never put it in a command
-argument, a log, or a transcript.
-
-The daemon owns the network connection. Every command below writes only a private local
-file, so it works when a sandbox blocks loopback connections. The laptop keeps the
-microphone, speech, and call controls; no microphone audio crosses the bridge.
-
-```sh
-talktome --remote call --agent hermes --thread CONNECTION_ID --greeting "Hey, what would you like to discuss?"
-talktome --remote listen --thread CONNECTION_ID --after 0 --timeout 25
-talktome --remote reply --thread CONNECTION_ID --call-id CALL_ID --turn-id TURN_ID --item-id ITEM_ID --text-file /tmp/voice-reply.txt
-talktome --remote end
-```
-
-Set `--agent` to your host: `hermes`, `openclaw`, `claude`, `codex`, or `generic`.
-A remote call is always cooperative, so do not add `--connection`.
-Choose `CONNECTION_ID` as described in [Call from a Hermes chat](#call-from-a-hermes-chat).
-
-Follow the same listen-and-reply procedure as a local cooperative call.
-Reply with the identifiers from the pending turn.
-Add `--progress` to a reply that is not the final answer.
-Reuse the same `--item-id` only to retry that exact reply.
-Pass `--request-id` only to retry the same request; a reused request ID with different
-text fails.
-
-The laptop must be online. If it is not, `call` returns an unavailable result and the
-ring is not saved for later.
-A lost delivery returns an explicit unknown result. Do not resend a mutating command
-after that error.
-`talktome --remote end` ends only this pair's call and cannot end a local call.
-The `talktome relay-*` commands belong on the relay host, not on this server.
-
 ## Call from a Hermes chat
 
 Use cooperative mode for a Hermes chat or terminal session.
-If Hermes runs on a paired server, use the remote bridge commands instead of the command below.
 Use the external adapter only when the user supplies an existing Hermes API session.
 Do not assume that the chat session is an API session.
 
@@ -218,8 +177,7 @@ talktome call --agent openclaw --connection cooperative --thread CONNECTION_ID -
 After the user answers, follow the cooperative procedure above.
 Use `listen` for user turns and `reply` for spoken answers.
 Ordinary OpenClaw chat text does not automatically become speech in this mode.
-If the shell runs in a remote Gateway or container, it cannot directly control this Mac's local TalkToMe app.
-If that server is paired through the remote bridge, use the remote bridge commands.
+If the shell runs on another computer, it cannot control this Mac's TalkToMe app.
 
 ## Start an external session call
 

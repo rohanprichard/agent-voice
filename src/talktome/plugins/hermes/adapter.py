@@ -148,7 +148,7 @@ class TalkToMeAdapter(BasePlatformAdapter):
         call = Call(thread=thread, client=client, source=source)
         call.task = asyncio.create_task(self._listen(call))
         self._call = call
-        return {"answered": True, "call": thread, "remote": client.remote}
+        return {"answered": True, "call": thread}
 
     async def _bind(self, source, session_id: str) -> None:
         """Point this call's chat at the session that placed the call."""

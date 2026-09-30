@@ -113,7 +113,7 @@ Use `chat.history` with its `deltaCursor` after a connection loss. Reapply its e
 
 OpenClaw also has an OpenResponses HTTP endpoint. It streams text through Server-Sent Events when `stream: true`. Use `x-openclaw-session-key` to select a session. [OpenClaw OpenResponses API](https://docs.openclaw.ai/gateway/openresponses-http-api)
 
-The HTTP endpoint gives full operator access under shared-secret authentication. Keep the Gateway token local. Do not send it to a remote voice service.
+The HTTP endpoint gives full operator access under shared-secret authentication. Keep the Gateway token local.
 
 Use the Gateway WebSocket adapter for an attached Gateway session. Use the HTTP endpoint only for a TalkToMe-managed compatibility mode.
 
@@ -125,7 +125,7 @@ It sends `chat.send` with `queueMode: "followup"` and an idempotency key. It acc
 
 Assistant events use `stream: "assistant"`. Tool events use `stream: "tool"`. A `stream: "lifecycle"` event ends the TalkToMe turn.
 
-The adapter requires `TALKTOME_OPENCLAW_TOKEN`. It uses a loopback Gateway URL by default. A remote URL must use `wss` and explicit opt-in.
+The adapter requires `TALKTOME_OPENCLAW_TOKEN`. It accepts only a loopback Gateway URL.
 
 Treat both native adapters as experimental until a user connects a local host and checks the full call path.
 

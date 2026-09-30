@@ -28,7 +28,7 @@ class AgentConfigurationError(ValueError):
 
 
 def _local_url(value: str, name: str, schemes: set[str]) -> str:
-    """Get a loopback URL unless the user enables a secure remote URL."""
+    """Get a loopback URL for an agent on this Mac."""
     if not isinstance(value, str):
         raise AgentConfigurationError(f"Set {name} to a complete supported URL.")
     parsed = urlparse(value)
@@ -37,11 +37,8 @@ def _local_url(value: str, name: str, schemes: set[str]) -> str:
     if parsed.scheme not in schemes or not parsed.hostname:
         raise AgentConfigurationError(f"Set {name} to a complete supported URL.")
     local = parsed.hostname in {"127.0.0.1", "::1", "localhost"}
-    remote = os.environ.get("TALKTOME_ALLOW_REMOTE_AGENTS") == "1"
-    if not local and (not remote or parsed.scheme not in {"https", "wss"}):
-        raise AgentConfigurationError(
-            f"Set {name} to a loopback URL, or enable a secure remote agent URL."
-        )
+    if not local:
+        raise AgentConfigurationError(f"Set {name} to a loopback URL.")
     return value.rstrip("/")
 
 

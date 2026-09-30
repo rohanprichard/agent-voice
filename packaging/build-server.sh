@@ -39,12 +39,7 @@ uv run --frozen --extra speech pyinstaller packaging/server.py \
   --hidden-import uvicorn.lifespan.on \
   --hidden-import talktome.streaming \
   --hidden-import talktome.cli \
-  --hidden-import talktome.__main__ \
-  --hidden-import talktome.remote \
-  --hidden-import talktome.remote.cli \
-  --hidden-import talktome.remote.connector \
-  --hidden-import talktome.remote.daemon \
-  --hidden-import talktome.remote.relay
+  --hidden-import talktome.__main__
 
 # Two large files that nothing loads. Python reaches onnxruntime through its own
 # extension, which does not link the C library beside it. Kokoro speaks only
