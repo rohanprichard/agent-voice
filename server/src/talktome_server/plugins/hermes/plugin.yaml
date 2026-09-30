@@ -1,0 +1,19 @@
+name: talktome
+label: talktome
+kind: platform
+version: 0.2.0
+description: >
+  Voice calls with Hermes through talktome.
+  The agent rings the user with the talktome_call tool. After the user answers,
+  each spoken turn arrives as a message in the session that placed the call, and
+  each reply is spoken by the talktome app. The talktome server on this
+  machine carries the call to the app.
+author: Rohan Richard
+provides_tools:
+  - talktome_call
+  - talktome_end
+optional_env:
+  - name: TALKTOME_DIR
+    description: "The talktome server's folder, when it is not the default"
+    prompt: "talktome server folder"
+    password: false

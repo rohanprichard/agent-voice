@@ -5,6 +5,27 @@ This file lists the changes that users see. The format follows
 
 ## Unreleased
 
+### Changed
+
+- talktome is now the app and `talktome-server`. The app runs `talktome-server` on this Mac and on your servers over SSH, and nothing listens on the network.
+- Agents ring you with the `call_user` tool, over MCP, instead of the `talktome call` command.
+- Speech uses your own ElevenLabs key. Without a key, you type in calls.
+
+### Added
+
+- Call a project on any connected machine from the menu bar. talktome continues the newest Claude Code or Codex session there, or starts a new one.
+- Join a Claude Code or Codex session while it works. Your words reach the agent after its next step.
+- The agent asks you in the call before it runs a tool that needs permission.
+- A setup checklist for each machine: SSH, uv, `talktome-server`, and the plugin for each agent.
+- Plugins for Claude Code, Codex, Hermes, and OpenClaw.
+
+### Removed
+
+- The local Python server, the local speech models, Smart Turn, and the notch surface.
+- The Calls window and call history. They come back in a later release.
+
+## Not released: changes to the earlier app after 0.1.0
+
 ### Added
 
 - Hermes and OpenClaw can call through cooperative commands or their host APIs.

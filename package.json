@@ -1,7 +1,7 @@
 {
   "name": "talktome",
-  "version": "0.1.0",
-  "description": "Voice calls with the coding agent you already use. A macOS menu-bar app.",
+  "version": "0.2.0",
+  "description": "Voice calls with your coding agents, on this Mac and on your servers over SSH. A macOS menu-bar app.",
   "license": "MIT",
   "author": "Rohan Richard",
   "homepage": "https://github.com/rohanprichard/talktome",
@@ -17,45 +17,33 @@
   },
   "private": true,
   "type": "module",
-  "main": "desktop/main.cjs",
+  "main": "desktop/build/main.js",
   "scripts": {
-    "start": "node scripts/start.mjs",
-    "reset": "node scripts/reset.mjs",
-    "test": "uv run pytest && node --test tests/*.test.mjs",
-    "test:attach": "uv run python scripts/attach_smoke.py",
-    "test:stream": "uv run python scripts/stream_smoke.py",
-    "lint": "uv run ruff check src tests scripts",
-    "test:call": "node scripts/call_smoke.mjs",
-    "test:attach-call": "uv run python scripts/attach_call_smoke.py",
-    "build:app": "sh packaging/build-app.sh",
-    "build:notch-preview": "sh scripts/build-notch-preview.sh",
-    "build:dmg": "sh packaging/build-app.sh --skip-server"
+    "start": "node scripts/build-ts.mjs && electron desktop/build/main.js",
+    "build:ts": "node scripts/build-ts.mjs",
+    "test": "node scripts/build-ts.mjs && node --test \"desktop/build/**/*.test.js\"",
+    "test:server": "cd server && uv run pytest -q && uvx ruff check src tests",
+    "build:app": "node scripts/make-app-icon.mjs && node scripts/build-ts.mjs && electron-builder --mac"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0",
+    "@types/node": "^22.20.4",
     "electron": "44.4.3",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "typescript": "^5.9.3"
   },
   "build": {
     "appId": "com.rohanprichard.talktome",
-    "productName": "TalkToMe",
+    "productName": "talktome",
     "directories": {
       "output": "dist/app",
       "buildResources": "build"
     },
     "files": [
-      "desktop/**/*",
+      "desktop/build/**/*",
+      "desktop/ui/**/*",
+      "desktop/tray-icon.cjs",
+      "desktop/png.cjs",
       "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "dist/frozen/talktome-server",
-        "to": "talktome-server"
-      },
-      {
-        "from": "dist/native/NotchSurface.app",
-        "to": "notch-surface/NotchSurface.app"
-      }
     ],
     "mac": {
       "category": "public.app-category.productivity",
@@ -79,8 +67,11 @@
       "minimumSystemVersion": "14.0",
       "extendInfo": {
         "LSUIElement": true,
-        "NSMicrophoneUsageDescription": "TalkToMe listens to you during a call with your agent."
+        "NSMicrophoneUsageDescription": "talktome listens to you during a call with your agent."
       }
     }
+  },
+  "allowScripts": {
+    "electron@44.4.3": true
   }
 }

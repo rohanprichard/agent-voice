@@ -24,38 +24,21 @@ jobs:
       - name: Check that the tag matches the version
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          node_version=$(node -p "require('./package.json').version")
-          python_version=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)
-          package_version=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/talktome/__init__.py)
-          echo "tag $tag, package.json $node_version, pyproject.toml $python_version, __init__.py $package_version"
-          [ "$tag" = "$node_version" ] && [ "$tag" = "$python_version" ] && [ "$tag" = "$package_version" ]
+          app=$(node -p "require('./package.json').version")
+          server=$(sed -n 's/^version = "\(.*\)"/\1/p' server/pyproject.toml)
+          package=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' server/src/talktome_server/__init__.py)
+          echo "tag $tag, app $app, server $server, package $package"
+          [ "$tag" = "$app" ] && [ "$tag" = "$server" ] && [ "$tag" = "$package" ]
 
-      - run: uv sync --frozen --extra speech
-      # A release is built only from code that passes the same checks as CI.
-      - run: uv run ruff check
-      - run: uv run pytest -q
-      - run: node --test tests/*.test.mjs
       - run: npm ci
       - name: Install the Electron binary
         run: test -d node_modules/electron/dist || node node_modules/electron/install.js
-
-      # The native notch is off, so the release does not build its helper.
-      # TALKTOME_NOTCH=1 turns the helper build on.
-      - run: sh packaging/build-app.sh
-
-      - name: Start the server from the built app
-        run: |
-          app=dist/app/mac-arm64/TalkToMe.app
-          codesign --verify --deep --strict "$app"
-          export TALKTOME_DATA_DIR="$RUNNER_TEMP/smoke" TALKTOME_PORT=8764
-          "$app/Contents/Resources/talktome-server/talktome-server" &
-          server=$!
-          for _ in $(seq 1 60); do
-            curl -sf http://127.0.0.1:8764/v1/health && break
-            sleep 1
-          done
-          curl -sf http://127.0.0.1:8764/v1/health
-          kill "$server"
+      - run: uv sync --frozen
+        working-directory: server
+      # A release is built only from code that passes the same checks as CI.
+      - run: npm test
+      - run: npm run build:app
+      - run: codesign --verify --deep --strict dist/app/mac-arm64/talktome.app
 
       - name: Write the Homebrew cask values
         run: |
@@ -76,9 +59,10 @@ jobs:
             dist/app/*.zip
             dist/app/latest-mac.yml
 
-  # Off until the owner sets up trusted publishing on PyPI and sets the
-  # repository variable PUBLISH_PYPI to true.
-  pypi:
+  # PyPI trusts this workflow through trusted publishing, so no token is
+  # stored. It is off until the owner sets up the trusted publisher on PyPI and
+  # sets the repository variable PUBLISH_PYPI to true.
+  server:
     if: vars.PUBLISH_PYPI == 'true'
     needs: app
     runs-on: ubuntu-latest
@@ -88,5 +72,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+        working-directory: server
+      - run: uv run pytest -q
+        working-directory: server
       - run: uv build
+        working-directory: server
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: server/dist
