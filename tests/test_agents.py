@@ -525,6 +525,15 @@ def test_the_skill_sends_a_paired_server_across_the_bridge():
     assert "add `--remote`" in local_or_remote
 
 
+def test_the_skill_offers_a_call_back_for_long_work():
+    # A user who has to stay quiet while the agent works for minutes will hang up.
+    text = agents.skill_source().read_text()
+    section = text.split("## Do not keep the user waiting")[1].split("\n## ")[0]
+    assert "I'll call you back when I'm done with that." in section
+    assert "background subagent" in section
+    assert "--greeting" in section
+
+
 def test_the_skill_gives_claude_code_a_cooperative_call():
     # Claude Code has no terminal adapter, so its call must be cooperative. The
     # server makes `--agent claude` cooperative without the flag.

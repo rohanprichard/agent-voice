@@ -25,6 +25,15 @@ class TalkToMeError(RuntimeError):
     pass
 
 
+def speech_seconds(text: str) -> float:
+    """About how long the Mac takes to say this, with time to start the audio.
+
+    Ending a call stops playback at once, so a goodbye needs this much time
+    before the hang-up. Speech runs at about 14 characters a second.
+    """
+    return min(20.0, 1.5 + len(text) / 14)
+
+
 def find_command(env=os.environ) -> str | None:
     configured = (env.get("TALKTOME_COMMAND") or "").strip()
     if configured:

@@ -16,6 +16,13 @@ const REPLY_TIMEOUT_MS = 60_000;
 
 export class TalkToMeError extends Error {}
 
+// About how long the Mac takes to say this, with time to start the audio.
+// Ending a call stops playback at once, so a goodbye needs this much time
+// before the hang-up. Speech runs at about 14 characters a second.
+export function speechSeconds(text) {
+  return Math.min(20, 1.5 + String(text).length / 14);
+}
+
 export function findCommand(env = process.env) {
   const configured = (env.TALKTOME_COMMAND || "").trim();
   if (configured) return configured;
@@ -174,6 +181,8 @@ const FAILED = "Sorry, something went wrong on my side.";
 // signal. The newest block reply is held, and the one before it is spoken as
 // progress. When the run ends, the held reply is spoken as the final reply.
 // When the user talks over a turn, the laptop cancels it and the run is aborted.
+// A hang-up does not abort a run: the agent may end the call and keep working,
+// then call back with the result.
 export class VoiceCall {
   constructor({ thread, client, runAgent, log = () => {}, sleep }) {
     this.thread = thread;
@@ -186,6 +195,7 @@ export class VoiceCall {
     this.cancelled = new Set();
     this.current = null;
     this.queue = Promise.resolve();
+    this.speakingUntil = 0;
   }
 
   start() {
@@ -236,11 +246,21 @@ export class VoiceCall {
 
   close() {
     this.closed = true;
-    this.current?.abort.abort();
   }
 
+  // Hang up after the last reply is spoken. When the agent ends the call in the
+  // middle of its own turn, for example after "I'll call you back", that
+  // sentence is still held, so it is spoken first. The turn keeps running.
   async end() {
+    const turn = this.current;
+    if (turn?.held && !this.closed) {
+      const text = turn.held;
+      turn.held = null;
+      await this.speak(turn, text, true);
+    }
     this.close();
+    const wait = this.speakingUntil - Date.now();
+    if (wait > 0) await this.sleep(wait);
     return this.client.end();
   }
 
@@ -285,6 +305,7 @@ export class VoiceCall {
     const itemId = final ? `${turn.turnId}-final` : `${turn.turnId}-${++turn.items}`;
     try {
       await this.client.reply(this.thread, turn.callId, turn.turnId, itemId, text, final);
+      this.speakingUntil = Math.max(this.speakingUntil, Date.now()) + speechSeconds(text) * 1000;
     } catch (error) {
       // A cancelled or replaced turn refuses replies. The next turn is already
       // on its way, so the reply is dropped.

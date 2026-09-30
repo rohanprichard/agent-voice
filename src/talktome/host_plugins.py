@@ -92,13 +92,11 @@ def install(agent: str, home: Path, run=subprocess.run) -> dict:
 
 def _install_openclaw(source: Path, destination: Path, run) -> dict:
     # OpenClaw copies the plugin and records it in its own config, so it has to
-    # do the install. It refuses to install over an existing copy.
+    # do the install and the removal. A folder deleted behind its back leaves a
+    # config entry for a missing plugin, and OpenClaw then refuses to start.
     if not find_command("openclaw"):
         raise ValueError("The openclaw command was not found, so the plugin cannot be installed.")
-    if destination.exists():
-        _host_command("openclaw", run, "plugins", "uninstall", "talktome", check=False)
-        if destination.exists():
-            shutil.rmtree(destination)
+    _remove_openclaw(destination, run)
     _host_command("openclaw", run, "plugins", "install", str(source))
     _host_command("openclaw", run, "plugins", "enable", "talktome", check=False)
     return {
@@ -109,16 +107,32 @@ def _install_openclaw(source: Path, destination: Path, run) -> dict:
     }
 
 
+def _remove_openclaw(destination: Path, run) -> None:
+    """Remove OpenClaw's record of the plugin, then its files.
+
+    `uninstall` removes the config entry and the install record but leaves the
+    files. A folder with no record is "not managed", and deleting it is safe.
+    Any other refusal stops here, so no config entry is left for missing files.
+    """
+    if not destination.exists():
+        return
+    try:
+        _host_command("openclaw", run, "plugins", "uninstall", "talktome", "--force")
+    except ValueError as exc:
+        if "not managed" not in str(exc):
+            raise
+    shutil.rmtree(destination)
+
+
 def remove(agent: str, home: Path, run=subprocess.run) -> dict:
     destination = target(agent, home)
     if not destination.exists():
         return {"agent": agent, "path": str(destination), "removed": False}
     if agent == "openclaw":
-        _host_command(agent, run, "plugins", "uninstall", "talktome", check=False)
-    else:
-        _host_command(agent, run, "plugins", "disable", "talktome", check=False)
-    if destination.exists():
-        shutil.rmtree(destination)
+        _remove_openclaw(destination, run)
+        return {"agent": agent, "path": str(destination), "removed": True}
+    _host_command(agent, run, "plugins", "disable", "talktome", check=False)
+    shutil.rmtree(destination)
     return {"agent": agent, "path": str(destination), "removed": True}
 
 

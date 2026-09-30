@@ -16,8 +16,12 @@ const DEFAULT_GREETING = "Hey, what would you like to talk about?";
 const VOICE_PROMPT =
   "You are in a live TalkToMe voice call. The user hears each reply as speech, and you " +
   "hear the user as text. Answer in one or two short spoken sentences unless the user " +
-  "asks for detail. Do not use markdown, lists, code, file paths, or URLs. Before long " +
-  "work, say in a few words what you will do.";
+  "asks for detail. Do not use markdown, lists, code, file paths, or URLs. Do not keep " +
+  "the user waiting in silence. If a request needs more than about a minute of work, " +
+  "choose one: start it in a background subagent, tell the user in one sentence, and " +
+  "keep talking; or say \"I'll call you back when I'm done with that\", call " +
+  "talktome_end, do the work, and then call talktome_call with the result in the " +
+  "greeting, in one or two spoken sentences.";
 
 let live: VoiceCall | null = null;
 let core: Promise<any> | null = null;
@@ -125,7 +129,8 @@ export default {
             "Ring the user for a live TalkToMe voice call on their Mac. Use it when the user " +
             "says call me, ring me, or talk to me. This is a desktop voice call, not a phone " +
             "call, so do not use a phone or telephony tool. After the user answers, the call " +
-            "continues this conversation by voice. Returns whether they answered.",
+            "continues this conversation by voice. To call back with a result, put the " +
+            "result in the greeting. Returns whether they answered.",
           parameters: {
             type: "object",
             properties: {
@@ -172,7 +177,9 @@ export default {
         {
           name: "talktome_end",
           label: "End TalkToMe call",
-          description: "End the live TalkToMe voice call, or stop a ring.",
+          description:
+            "End the live TalkToMe voice call, or stop a ring. Anything you already said " +
+            "is spoken first. Your current work keeps running.",
           parameters: { type: "object", properties: {}, additionalProperties: false },
           async execute() {
             try {
@@ -194,6 +201,7 @@ export default {
       start() {},
       stop() {
         live?.close();
+        live?.current?.abort.abort();
         live = null;
       },
     });

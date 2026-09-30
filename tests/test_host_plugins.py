@@ -200,6 +200,44 @@ def test_an_edit_replaces_the_held_message(plugin):
     asyncio.run(scenario())
 
 
+def test_hanging_up_mid_turn_speaks_the_goodbye_and_keeps_the_work(plugin, monkeypatch):
+    # "I'll call you back when I'm done" is held when the agent ends the call, so
+    # the hang-up speaks it first. The turn goes on without a call to speak into.
+    monkeypatch.setattr(plugin.module, "speech_seconds", lambda text: 0)
+
+    async def scenario():
+        adapter, fake, event = await live_turn(plugin)
+        ended = []
+
+        async def end():
+            ended.append(fake.replies[:])
+            return {"status": "ended"}
+
+        fake.end = end
+        await adapter.send("hermes-1", "I'll call you back when I'm done with that.")
+        assert await adapter.end_call() == {"status": "ended"}
+        assert ended == [[("turn-1-final", "I'll call you back when I'm done with that.", True)]]
+        assert adapter._call is None
+        await adapter.send("hermes-1", "Still working.")
+        await adapter.on_processing_complete(event, plugin.base.ProcessingOutcome.SUCCESS)
+        assert len(fake.replies) == 1
+
+    asyncio.run(scenario())
+
+
+def test_the_voice_hint_offers_a_call_back(plugin):
+    hint = plugin.module.PLATFORM_HINT
+    assert "I'll call you back" in hint
+    assert "talktome_end" in hint and "talktome_call" in hint
+    assert "subagent" in hint
+
+
+def test_a_goodbye_gets_time_to_play_before_the_hang_up():
+    assert client.speech_seconds("") == 1.5
+    assert 4 < client.speech_seconds("I'll call you back when I'm done with that.") < 6
+    assert client.speech_seconds("word " * 1000) == 20
+
+
 def test_markdown_and_code_are_not_read_aloud():
     text = "## Result\n\n- **Disk**: 163 GB free\n- See [the docs](https://x.io)\n```sh\ndf -h\n```\nDone."
     assert client.speakable(text) == "Result Disk: 163 GB free See the docs Done."
@@ -352,6 +390,7 @@ class FakeOpenClaw:
     def __init__(self, extensions: Path):
         self.extensions = extensions
         self.calls = []
+        self.recorded = False
 
     def __call__(self, argv, **kwargs):
         args = argv[1:]
@@ -361,8 +400,16 @@ class FakeOpenClaw:
             if destination.exists():
                 return types.SimpleNamespace(stdout="", stderr="plugin already exists", returncode=1)
             host_plugins.shutil.copytree(args[2], destination, ignore=host_plugins.IGNORE)
+            self.recorded = True
         elif args[:2] == ["plugins", "uninstall"]:
-            host_plugins.shutil.rmtree(self.extensions / "talktome", ignore_errors=True)
+            # Without --force it asks for confirmation, and with no input it stops.
+            if "--force" not in args:
+                return types.SimpleNamespace(stdout="Uninstall talktome? ", stderr="", returncode=1)
+            if not self.recorded:
+                message = 'Plugin "talktome" is not managed by plugins config/install records.'
+                return types.SimpleNamespace(stdout="", stderr=message, returncode=1)
+            # The real command removes the record and leaves the files.
+            self.recorded = False
         return types.SimpleNamespace(stdout="", stderr="", returncode=0)
 
 
@@ -374,11 +421,38 @@ def test_openclaw_installs_its_plugin_through_its_own_command(tmp_path, monkeypa
     source = PLUGIN.parent / "openclaw"
     assert ["plugins", "install", str(source)] in openclaw.calls
     assert host_plugins.status("openclaw", tmp_path)["current"] is True
-    # OpenClaw refuses to install over a copy, so a second install replaces it.
+    # OpenClaw refuses to install over a copy, so a second install has OpenClaw
+    # remove the old one. Deleting the folder directly would leave its config
+    # entry behind, and OpenClaw would then refuse to start.
     host_plugins.install("openclaw", tmp_path, run=openclaw)
-    assert openclaw.calls.count(["plugins", "uninstall", "talktome"]) == 1
+    assert openclaw.calls.count(["plugins", "uninstall", "talktome", "--force"]) == 1
     assert host_plugins.remove("openclaw", tmp_path, run=openclaw)["removed"] is True
     assert not (tmp_path / ".openclaw" / "extensions" / "talktome").exists()
+    assert openclaw.recorded is False
+
+
+def test_an_unrecorded_openclaw_copy_is_replaced(tmp_path, monkeypatch):
+    # A folder OpenClaw has no record of is loaded, but it cannot be uninstalled.
+    (tmp_path / ".openclaw" / "extensions" / "talktome").mkdir(parents=True)
+    monkeypatch.setattr(host_plugins, "find_command", lambda name: f"/bin/{name}")
+    openclaw = FakeOpenClaw(tmp_path / ".openclaw" / "extensions")
+    host_plugins.install("openclaw", tmp_path, run=openclaw)
+    assert openclaw.recorded is True
+    assert host_plugins.status("openclaw", tmp_path)["current"] is True
+
+
+def test_a_refused_openclaw_uninstall_keeps_the_files(tmp_path, monkeypatch):
+    # Deleting files that OpenClaw still has a record of would stop it starting.
+    folder = tmp_path / ".openclaw" / "extensions" / "talktome"
+    folder.mkdir(parents=True)
+    monkeypatch.setattr(host_plugins, "find_command", lambda name: f"/bin/{name}")
+
+    def refuse(argv, **kwargs):
+        return types.SimpleNamespace(stdout="", stderr="config is locked", returncode=1)
+
+    with pytest.raises(ValueError, match="config is locked"):
+        host_plugins.install("openclaw", tmp_path, run=refuse)
+    assert folder.exists()
 
 
 def test_the_openclaw_plugin_declares_its_manifest():

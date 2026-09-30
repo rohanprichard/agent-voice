@@ -22,7 +22,8 @@ If neither command exists, ask the user to install the command from TalkToMe Set
 
 If the host has a `talktome_call` tool, call it and skip the rest of this skill.
 The TalkToMe plugin then runs the call. Each thing the user says arrives as a normal message, and each reply you send is spoken.
-Do not run `listen` or `reply` during a plugin call. Use `talktome_end` only when the user asks to end the call.
+Do not run `listen` or `reply` during a plugin call.
+Use `talktome_end` when the user asks to end the call, or to call back later with a result. See [Do not keep the user waiting](#do-not-keep-the-user-waiting).
 
 ## Local or remote
 
@@ -58,6 +59,20 @@ The main agent handles voice connection commands and short conversation directly
 If the host has no subagent function, state that limit once. Do not claim that you delegated the work.
 Use the available host functions without inventing a subagent command.
 If the user requests no subagents, do the work directly until the user changes that instruction.
+
+## Do not keep the user waiting
+
+The user cannot see your work during a call. Silence feels like a dropped call.
+If a request needs more than about a minute of work, choose one:
+
+1. Start the work in a background subagent. Tell the user in one sentence, and keep talking.
+2. Offer to call back. Say "I'll call you back when I'm done with that." Then end the call and do the work.
+   When the work is done, call again. Put the result in the greeting, in one or two spoken sentences.
+
+Use the call back when you cannot run the work in the background, or when the user wants to go.
+With a plugin, end with `talktome_end` and call back with `talktome_call`.
+With commands, send the goodbye as the final reply, wait about five seconds so it can play, then run `talktome end`.
+Call back with `talktome call` and put the result in `--greeting`.
 
 ## Select the connection
 

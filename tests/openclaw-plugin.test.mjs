@@ -11,6 +11,7 @@ import {
   firstJson,
   run,
   speakable,
+  speechSeconds,
 } from "../src/talktome/plugins/openclaw/talktome.mjs";
 
 // A laptop that plays back a scripted list of listen results.
@@ -101,6 +102,42 @@ test("talking over a turn aborts the run and speaks nothing for it", async () =>
   });
   assert.equal(aborted, true);
   assert.deepEqual(client.replies, []);
+});
+
+test("hanging up mid-turn speaks the goodbye and lets the work finish", async () => {
+  let finished = false;
+  let aborted = false;
+  let call;
+  const client = new FakeClient([turn("t1", "Refactor the whole repo")]);
+  client.end = async () => {
+    client.ended = client.replies.slice();
+    return { status: "ended" };
+  };
+  call = new VoiceCall({
+    thread: "openclaw-1",
+    client,
+    sleep: async () => {},
+    runAgent: async (_prompt, { onBlockReply, abortSignal }) => {
+      abortSignal.addEventListener("abort", () => (aborted = true));
+      await onBlockReply({ text: "I'll call you back when I'm done with that." });
+      await call.end();
+      finished = true;
+      await onBlockReply({ text: "All done." });
+      return { texts: ["All done."] };
+    },
+  });
+  client.call = call;
+  await call.start().listening;
+  await call.queue;
+  assert.deepEqual(client.ended, [["t1-final", "I'll call you back when I'm done with that.", true]]);
+  assert.equal(finished, true);
+  assert.equal(aborted, false);
+  assert.equal(client.replies.length, 1);
+});
+
+test("a goodbye gets time to play before the hang-up", () => {
+  assert.equal(speechSeconds(""), 1.5);
+  assert.equal(speechSeconds("word ".repeat(1000)), 20);
 });
 
 test("a turn is run once even when listen repeats it", async () => {

@@ -32,7 +32,7 @@ from gateway.platforms.base import (
     SendResult,
 )
 
-from .client import TalkToMeClient, TalkToMeError, find_command, speakable
+from .client import TalkToMeClient, TalkToMeError, find_command, speakable, speech_seconds
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +45,12 @@ PLATFORM_HINT = (
     "You are in a live TalkToMe voice call. The user hears each message you send as "
     "speech, and you hear the user as text. Answer in one or two short spoken "
     "sentences unless the user asks for detail. Do not use markdown, lists, code, "
-    "file paths, or URLs. Before long work, say in a few words what you will do. "
-    "Keep technical detail for a written follow-up in another chat."
+    "file paths, or URLs. Do not keep the user waiting in silence. If a request needs "
+    "more than about a minute of work, choose one: start it in a background subagent, "
+    "tell the user in one sentence, and keep talking; or say \"I'll call you back when "
+    "I'm done with that\", call talktome_end, do the work, and then call talktome_call "
+    "with the result in the greeting, in one or two spoken sentences. Keep technical "
+    "detail for a written follow-up in another chat."
 )
 
 _adapter: TalkToMeAdapter | None = None
@@ -71,6 +75,7 @@ class Call:
     seen: set[str] = field(default_factory=set)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     task: asyncio.Task | None = None
+    speaking_until: float = 0.0
 
 
 class TalkToMeAdapter(BasePlatformAdapter):
@@ -161,11 +166,27 @@ class TalkToMeAdapter(BasePlatformAdapter):
             evict(entry.session_key)
 
     async def end_call(self) -> dict:
+        """Hang up after the last reply is spoken.
+
+        The agent can end the call in the middle of its own turn, for example
+        after "I'll call you back". That sentence is still held, so it is spoken
+        first. The turn itself keeps running.
+        """
         call = self._call
         if call is None:
             client = await TalkToMeClient.discover()
             return await client.end()
+        async with call.lock:
+            turn = call.turn
+            if turn and turn.held and not turn.finished:
+                text, turn.held = turn.held, None
+                await self._speak(call, turn, text, final=True)
+            if turn:
+                turn.finished = True
+            call.turn = None
         self._call = None
+        loop = asyncio.get_running_loop()
+        await asyncio.sleep(max(0.0, call.speaking_until - loop.time()))
         try:
             return await call.client.end()
         finally:
@@ -288,6 +309,8 @@ class TalkToMeAdapter(BasePlatformAdapter):
         item_id = f"{turn.turn_id}-{'final' if final else turn.items}"
         try:
             await call.client.reply(call.thread, turn.call_id, turn.turn_id, item_id, text, final)
+            now = asyncio.get_running_loop().time()
+            call.speaking_until = max(call.speaking_until, now) + speech_seconds(text)
         except TalkToMeError as exc:
             # A cancelled or replaced turn refuses replies. The next turn is
             # already on its way, so the reply is dropped.
@@ -302,7 +325,8 @@ CALL_SCHEMA = {
         "Ring the user for a live TalkToMe voice call on their Mac. Use it when the user "
         "says call me, ring me, or talk to me. This is a desktop voice call, not a phone "
         "call, so do not look for a phone or telephony tool. After the user answers, "
-        "the call continues this conversation by voice. Returns whether they answered."
+        "the call continues this conversation by voice. To call back with a result, "
+        "put the result in the greeting. Returns whether they answered."
     ),
     "parameters": {
         "type": "object",
@@ -322,7 +346,10 @@ CALL_SCHEMA = {
 
 END_SCHEMA = {
     "name": "talktome_end",
-    "description": "End the live TalkToMe voice call, or stop a ring.",
+    "description": (
+        "End the live TalkToMe voice call, or stop a ring. Anything you already said "
+        "is spoken first. Your current work keeps running."
+    ),
     "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
 }
 
