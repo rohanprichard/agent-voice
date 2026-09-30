@@ -8,6 +8,7 @@ these tests cover the plugin's own turn logic, not Hermes.
 import asyncio
 import enum
 import importlib.util
+import json
 import sys
 import types
 from dataclasses import dataclass, field
@@ -343,3 +344,47 @@ def test_install_needs_hermes_to_be_set_up(tmp_path, monkeypatch):
 def test_the_plugin_ships_its_two_tools():
     manifest = (PLUGIN / "plugin.yaml").read_text()
     assert "talktome_call" in manifest and "talktome_end" in manifest
+
+
+class FakeOpenClaw:
+    """Copies a plugin the way `openclaw plugins install <path>` does."""
+
+    def __init__(self, extensions: Path):
+        self.extensions = extensions
+        self.calls = []
+
+    def __call__(self, argv, **kwargs):
+        args = argv[1:]
+        self.calls.append(args)
+        if args[:2] == ["plugins", "install"]:
+            destination = self.extensions / "talktome"
+            if destination.exists():
+                return types.SimpleNamespace(stdout="", stderr="plugin already exists", returncode=1)
+            host_plugins.shutil.copytree(args[2], destination, ignore=host_plugins.IGNORE)
+        elif args[:2] == ["plugins", "uninstall"]:
+            host_plugins.shutil.rmtree(self.extensions / "talktome", ignore_errors=True)
+        return types.SimpleNamespace(stdout="", stderr="", returncode=0)
+
+
+def test_openclaw_installs_its_plugin_through_its_own_command(tmp_path, monkeypatch):
+    (tmp_path / ".openclaw").mkdir()
+    monkeypatch.setattr(host_plugins, "find_command", lambda name: f"/bin/{name}")
+    openclaw = FakeOpenClaw(tmp_path / ".openclaw" / "extensions")
+    host_plugins.install("openclaw", tmp_path, run=openclaw)
+    source = PLUGIN.parent / "openclaw"
+    assert ["plugins", "install", str(source)] in openclaw.calls
+    assert host_plugins.status("openclaw", tmp_path)["current"] is True
+    # OpenClaw refuses to install over a copy, so a second install replaces it.
+    host_plugins.install("openclaw", tmp_path, run=openclaw)
+    assert openclaw.calls.count(["plugins", "uninstall", "talktome"]) == 1
+    assert host_plugins.remove("openclaw", tmp_path, run=openclaw)["removed"] is True
+    assert not (tmp_path / ".openclaw" / "extensions" / "talktome").exists()
+
+
+def test_the_openclaw_plugin_declares_its_manifest():
+    source = PLUGIN.parent / "openclaw"
+    manifest = json.loads((source / "openclaw.plugin.json").read_text())
+    assert manifest["id"] == "talktome"
+    assert manifest["configSchema"]["additionalProperties"] is False
+    package = json.loads((source / "package.json").read_text())
+    assert package["openclaw"]["extensions"] == ["./index.ts"]

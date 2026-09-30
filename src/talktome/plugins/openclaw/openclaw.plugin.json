@@ -1,0 +1,21 @@
+{
+  "id": "talktome",
+  "name": "TalkToMe",
+  "description": "Voice calls with OpenClaw through the TalkToMe desktop app.",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "command": {
+        "type": "string",
+        "description": "Path to the talktome command. Defaults to talktome on PATH, then ~/.local/bin/talktome."
+      },
+      "remote": {
+        "type": "string",
+        "enum": ["auto", "true", "false"],
+        "description": "Use the TalkToMe remote bridge. auto reads talktome remote-status."
+      }
+    }
+  }
+}

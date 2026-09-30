@@ -15,6 +15,7 @@ from pathlib import Path
 from .agents import find_command
 
 PLUGINS = Path(__file__).resolve().parent / "plugins"
+HOSTS = ("hermes", "openclaw")
 IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", "node_modules")
 
 # A global display setting outranks a platform default in Hermes, so a user with
@@ -30,21 +31,24 @@ HERMES_VOICE_DISPLAY = {
 }
 
 
-def hermes_home(home: Path) -> Path:
-    return Path(os.environ.get("HERMES_HOME") or home / ".hermes").expanduser()
+def host_home(agent: str, home: Path) -> Path:
+    if agent == "hermes":
+        return Path(os.environ.get("HERMES_HOME") or home / ".hermes").expanduser()
+    if agent == "openclaw":
+        return Path(os.environ.get("OPENCLAW_STATE_DIR") or home / ".openclaw").expanduser()
+    raise ValueError(f"There is no TalkToMe plugin for {agent}.")
 
 
 def target(agent: str, home: Path) -> Path:
-    if agent == "hermes":
-        return hermes_home(home) / "plugins" / "talktome"
-    raise ValueError(f"There is no TalkToMe plugin for {agent} yet.")
+    folder = "plugins" if agent == "hermes" else "extensions"
+    return host_home(agent, home) / folder / "talktome"
 
 
 def _host_command(agent: str, run=subprocess.run, *args: str, check=True) -> str | None:
     binary = find_command(agent)
     if not binary:
         return None
-    result = run([binary, *args], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
+    result = run([binary, *args], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
     output = (result.stdout + result.stderr).strip()
     if result.returncode:
         if not check:
@@ -67,10 +71,12 @@ def install(agent: str, home: Path, run=subprocess.run) -> dict:
     source = PLUGINS / agent
     if not source.is_dir():
         raise ValueError(f"This install is missing the {agent} plugin.")
-    home_dir = hermes_home(home)
+    home_dir = host_home(agent, home)
     if not home_dir.is_dir():
         raise ValueError(f"{agent} is not set up for this user: {home_dir} does not exist.")
     destination = target(agent, home)
+    if agent == "openclaw":
+        return _install_openclaw(source, destination, run)
     if destination.exists():
         shutil.rmtree(destination)
     shutil.copytree(source, destination, ignore=IGNORE)
@@ -84,15 +90,35 @@ def install(agent: str, home: Path, run=subprocess.run) -> dict:
     }
 
 
+def _install_openclaw(source: Path, destination: Path, run) -> dict:
+    # OpenClaw copies the plugin and records it in its own config, so it has to
+    # do the install. It refuses to install over an existing copy.
+    if not find_command("openclaw"):
+        raise ValueError("The openclaw command was not found, so the plugin cannot be installed.")
+    if destination.exists():
+        _host_command("openclaw", run, "plugins", "uninstall", "talktome", check=False)
+        if destination.exists():
+            shutil.rmtree(destination)
+    _host_command("openclaw", run, "plugins", "install", str(source))
+    _host_command("openclaw", run, "plugins", "enable", "talktome", check=False)
+    return {
+        "agent": "openclaw",
+        "path": str(destination),
+        "enabled": True,
+        "next": "Restart the OpenClaw gateway: openclaw gateway restart",
+    }
+
+
 def remove(agent: str, home: Path, run=subprocess.run) -> dict:
     destination = target(agent, home)
     if not destination.exists():
         return {"agent": agent, "path": str(destination), "removed": False}
-    try:
-        _host_command(agent, run, "plugins", "disable", "talktome")
-    except ValueError:
-        pass
-    shutil.rmtree(destination)
+    if agent == "openclaw":
+        _host_command(agent, run, "plugins", "uninstall", "talktome", check=False)
+    else:
+        _host_command(agent, run, "plugins", "disable", "talktome", check=False)
+    if destination.exists():
+        shutil.rmtree(destination)
     return {"agent": agent, "path": str(destination), "removed": True}
 
 

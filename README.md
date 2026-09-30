@@ -117,6 +117,11 @@ The `listen` and `reply` commands are the "cooperative" connection.
 They work with any host that can run shell commands on the Mac that runs TalkToMe.
 The commands exchange private files with the app. Thus, they work when a sandbox blocks local network access.
 
+For Hermes and OpenClaw, a host plugin is the better connection.
+Install it with `talktome plugin install --agent hermes` or `--agent openclaw`.
+The agent then rings with a `talktome_call` tool, and the plugin runs `listen` and `reply` itself.
+See [host plugins](docs/HOST_PLUGINS.md).
+
 Hermes and OpenClaw also have experimental adapters for an API session or a Gateway session.
 Run `talktome providers` to see the connection methods that are ready.
 [Agent support](docs/AGENT_SUPPORT.md) gives the setup and the limits.

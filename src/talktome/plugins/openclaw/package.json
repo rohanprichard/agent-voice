@@ -1,0 +1,12 @@
+{
+  "name": "talktome",
+  "version": "0.1.0",
+  "description": "Voice calls with OpenClaw through the TalkToMe desktop app",
+  "license": "MIT",
+  "type": "module",
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

@@ -183,8 +183,8 @@ def plugin_command(args, parser) -> int:
     action = args.target or "status"
     if action not in {"install", "remove", "status"}:
         parser.error("Use plugin install, plugin remove, or plugin status.")
-    if args.agent not in {"hermes"}:
-        parser.error("Name the host with --agent hermes.")
+    if args.agent not in host_plugins.HOSTS:
+        parser.error("Name the host with --agent hermes or --agent openclaw.")
     handlers = {
         "install": host_plugins.install,
         "remove": host_plugins.remove,

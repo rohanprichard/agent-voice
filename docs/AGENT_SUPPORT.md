@@ -12,7 +12,11 @@ The new adapters need a live check before release. No real calls ran during this
 | Hermes Agent | Runs API for an existing API session | Experimental, requires server capabilities |
 | OpenClaw | Gateway protocol for an existing session key | Experimental, requires server capabilities |
 | Other hosts | Explicit `listen` and `reply` commands | Requires shell commands in the host |
-| Any supported host, remote server | Remote bridge daemon | New, needs a live check; see [remote bridge](REMOTE_BRIDGE.md) |
+| Any supported host, remote server | Remote bridge daemon | Live check passed with Hermes; see [remote bridge](REMOTE_BRIDGE.md) |
+| Hermes Agent, OpenClaw | Host plugin with a `talktome_call` tool | Hermes passed live calls; see [host plugins](HOST_PLUGINS.md) |
+
+A host plugin is the preferred connection for Hermes and OpenClaw.
+The plugin runs `listen` and `reply` inside the host, so the model does not spend a model call on each command.
 
 The remote bridge runs the same cooperative commands through an agent-side
 daemon and a self-hosted relay. The laptop keeps the microphone and speech, and
