@@ -12,6 +12,11 @@ class VoiceCall {
   private muted = false;
   private speaking = false;
   private pendingSpeech: Promise<void> = Promise.resolve();
+  private skipTo = 0; // replies queued before this count are not spoken
+  private queued = 0;
+  // What the pill draws: the microphone level, and the words heard so far.
+  level = 0;
+  partial = "";
 
   constructor(
     readonly callId: string,
@@ -55,6 +60,10 @@ class VoiceCall {
       this.sink = this.context.createGain();
       this.sink.gain.value = 0;
       this.processor.onaudioprocess = (event) => {
+        const samples = event.inputBuffer.getChannelData(0);
+        let sum = 0;
+        for (let index = 0; index < samples.length; index++) sum += samples[index] * samples[index];
+        this.level = this.muted ? 0 : Math.sqrt(sum / samples.length);
         if (this.stopped || this.muted || this.speaking || socket.readyState !== WebSocket.OPEN) return;
         socket.send(JSON.stringify({
           message_type: "input_audio_chunk",
@@ -73,10 +82,11 @@ class VoiceCall {
     let event: { message_type?: string; text?: string };
     try { event = JSON.parse(raw); } catch { return; }
     if (event.message_type === "committed_transcript" && event.text?.trim()) {
+      this.partial = "";
       this.onStatus("Thinking…");
       this.onText(event.text.trim());
     } else if (event.message_type === "partial_transcript" && event.text?.trim()) {
-      this.onStatus(`Hearing: ${event.text.trim()}`);
+      this.partial = event.text.trim();
     } else if (["error", "auth_error", "rate_limited"].includes(event.message_type ?? "")) {
       this.fail("Speech input failed.");
     }
@@ -84,7 +94,8 @@ class VoiceCall {
 
   speak(text: string): void {
     if (!text.trim() || this.stopped) return;
-    this.pendingSpeech = this.pendingSpeech.then(() => this.playSpeech(text)).catch((error) => {
+    const place = ++this.queued;
+    this.pendingSpeech = this.pendingSpeech.then(() => (place > this.skipTo ? this.playSpeech(text) : undefined)).catch((error) => {
       if (!this.stopped) this.onStatus(error instanceof Error ? error.message : "Speech output failed.", true);
     });
   }
@@ -139,6 +150,21 @@ class VoiceCall {
       this.audioURL = "";
       this.speaking = false;
       if (!this.stopped) this.onStatus(this.muted ? "Microphone off" : "Listening…");
+    }
+  }
+
+  // playing is true while a reply is heard, which is when the agent's thread moves.
+  playing(): boolean {
+    return Boolean(this.audio && !this.audio.paused);
+  }
+
+  // stopSpeaking stops the reply that plays, and drops the ones waiting.
+  stopSpeaking(): void {
+    this.skipTo = this.queued;
+    this.output?.close();
+    if (this.audio) {
+      this.audio.pause();
+      this.audio.dispatchEvent(new Event("ended"));
     }
   }
 

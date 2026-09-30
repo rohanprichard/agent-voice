@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld("talktome", {
   callAgent: (agentId: string, targetId: string, mode: string) => ipcRenderer.invoke("call-agent", agentId, targetId, mode),
   dismissNotice: (noticeId: string) => ipcRenderer.invoke("dismiss-notice", noticeId),
   openAgents: () => ipcRenderer.invoke("open-agents"),
+  pointer: (inside: boolean) => ipcRenderer.invoke("pointer", inside),
   sshHosts: () => ipcRenderer.invoke("ssh-hosts"),
   inspect: (place: string) => ipcRenderer.invoke("inspect", place),
   installUv: (place: string) => ipcRenderer.invoke("install-uv", place),

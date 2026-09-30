@@ -1,130 +1,236 @@
-// The call pill: a ring, then a voice call with text input if speech fails.
+// The call surface: a capsule that grows out from under the menu bar, rings,
+// becomes the call pill when answered, and goes back when the call ends. The
+// transcript opens below it. With no speech, the user types in the transcript.
 
 (() => {
   followTheme();
-  const root = document.getElementById("pill")!;
-  let drafts = new Map<string, string>();
-  let shown = "";
+  const surface = document.getElementById("surface")!;
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const ringing = $("ringing");
+  const pill = $("pill");
+  const list = $("t-list");
+  const empty = $("t-empty");
+  const choices = $("choices");
+  const say = $<HTMLInputElement>("say");
+  const status = $("call-status");
+  const mute = $("mute");
+  const interrupt = $<HTMLButtonElement>("interrupt");
+  const toggle = $("transcript-toggle");
+
+  type Shape = "hidden" | "attached" | "settled";
+  let shape: Shape = "hidden";
+  let current: Call | null = null;
   let voice: VoiceCall | null = null;
-  let voiceStatus = "Connecting microphone…";
-  let voiceFailed = false;
-  let showText = false;
-  let handledLines = 0;
-  let lastState: Snapshot | null = null;
+  let speechFailed = false;
+  let spokenLines = 0;
+  let listKey = "";
+  let agentPulseUntil = 0;
+  let timers: number[] = [];
+  let stopThreads: (() => void) | null = null;
+
+  function later(ms: number, fn: () => void): void {
+    timers.push(window.setTimeout(fn, ms));
+  }
+
+  function clearTimers(): void {
+    timers.forEach(clearTimeout);
+    timers = [];
+  }
+
+  function setShape(next: Shape): void {
+    shape = next;
+    surface.dataset.shape = next;
+  }
+
+  // appear: attached first, still dark under the menu bar, then it lets go.
+  function appear(): void {
+    clearTimers();
+    setShape("attached");
+    later(300, () => setShape("settled"));
+  }
+
+  function withdraw(): void {
+    clearTimers();
+    ringing.classList.remove("shown");
+    pill.classList.remove("shown");
+    surface.dataset.transcript = "closed";
+    later(120, () => setShape("attached"));
+    later(420, () => setShape("hidden"));
+  }
+
+  function nameOf(call: Call): string {
+    if (call.direction === "incoming") return call.reason || call.agent.name;
+    return call.target?.project ?? call.agent.name;
+  }
 
   function render(state: Snapshot): void {
-    lastState = state;
-    const call = state.calls.find((c) => c.state === "ringing") ?? state.calls[state.calls.length - 1];
-    if (!call || call.state !== "live" || voice?.callId !== call.id) {
-      voice?.stop();
-      voice = null;
-    }
+    const call = state.calls.find((c) => c.state === "ringing") ?? state.calls[state.calls.length - 1] ?? null;
     if (!call) {
-      root.replaceChildren();
-      shown = "";
+      if (current) withdraw();
+      stopVoice();
+      current = null;
       return;
     }
-    if (call.state === "live" && !voice) {
-      voiceStatus = "Connecting microphone…";
-      voiceFailed = false;
-      showText = false;
-      handledLines = 0;
-      voice = new VoiceCall(call.id, (text) => { void window.talktome.say(call.id, text); }, (status, failed) => {
-        voiceStatus = status;
-        if (failed) { voiceFailed = true; showText = true; }
-        const label = root.querySelector(".voice-state");
-        if (label) label.textContent = status;
-        if (failed && lastState) render(lastState);
+    const fresh = call.id !== current?.id;
+    const was = current?.state;
+    current = call;
+    if (fresh) {
+      stopVoice();
+      speechFailed = false;
+      $("t-note").hidden = true;
+      spokenLines = 0;
+      listKey = "";
+      surface.dataset.transcript = "closed";
+      if (shape === "hidden") appear();
+    }
+    surface.dataset.state = call.state;
+
+    // The contents wait until the capsule has let go of the menu bar.
+    const settleWait = shape === "settled" ? 0 : 520;
+    if (call.state === "ringing") {
+      $("ring-name").textContent = nameOf(call);
+      $("ring-hint").textContent = call.reason ? `${call.agent.name} wants to talk` : "wants to talk";
+      later(settleWait, () => ringing.classList.add("shown"));
+      pill.classList.remove("shown");
+    } else {
+      ringing.classList.remove("shown");
+      $("call-name").textContent = nameOf(call);
+      later(was === "ringing" ? 180 : settleWait, () => pill.classList.add("shown"));
+    }
+
+    if (call.state === "live" && !voice && !speechFailed) startVoice(call);
+    if (call.state === "ended" && was === "ringing") {
+      // A declined or missed ring goes straight back.
+      withdraw();
+      return;
+    }
+    if (call.state === "ended") {
+      stopVoice();
+      later(1400, () => {
+        if (current?.id === call.id && current.state === "ended") withdraw();
       });
-      void voice.start();
     }
     if (voice && call.state === "live") {
-      for (const line of call.lines.slice(handledLines)) {
+      for (const line of call.lines.slice(spokenLines)) {
         if (line.who === "agent" && line.final !== false) voice.speak(line.text);
       }
-      handledLines = call.lines.length;
     }
-    // Keep the text the user is typing when the state changes.
-    const input = root.querySelector<HTMLInputElement>("input.say");
-    if (input && shown) drafts.set(shown, input.value);
-    const focused = document.activeElement === input;
-    shown = call.id;
-    root.replaceChildren(card(call));
-    const next = root.querySelector<HTMLInputElement>("input.say");
-    if (next) {
-      next.value = drafts.get(call.id) ?? "";
-      if (focused || call.state === "live") next.focus();
-    }
-    const log = root.querySelector(".lines");
-    if (log) log.scrollTop = log.scrollHeight;
+    if (call.lines.slice(spokenLines).some((line) => line.who === "agent")) agentPulseUntil = performance.now() + 1600;
+    spokenLines = call.lines.length;
+    if (call.choices?.length && call.state === "live" && !call.lines.some((l) => l.who === "user")) openTranscript(true);
+    renderTranscript(call);
+    renderStatus();
   }
 
-  function card(call: Call): HTMLElement {
-    const title = call.direction === "incoming" ? call.agent.name : `${call.agent.name} · ${call.target?.project ?? ""}`;
-    const status = {
-      ringing: call.urgency === "urgent" ? "Urgent call" : "Incoming call",
-      calling: `Calling (${call.mode})…`,
-      live: call.waiting ? "Thinking…" : "Live",
-      ended: call.ended ?? "Call ended",
-    }[call.state];
-    const head = el("header", {}, el("div", { class: "who", text: title }), el("div", { class: `status ${call.state}`, text: status }));
-    const body = el("div", { class: "body" });
-    if (call.reason && call.direction === "incoming") body.append(el("div", { class: "reason", text: call.reason }));
-
-    if (call.state === "ringing") {
-      if (call.question) body.append(el("div", { class: "question", text: call.question }));
-      body.append(
-        el(
-          "div",
-          { class: "actions" },
-          button("Decline", "secondary-button decline", () => window.talktome.decline(call.id)),
-          button("Answer", "primary-button answer", () => window.talktome.answer(call.id)),
-        ),
-      );
-      return el("section", { class: "card ringing" }, head, body);
-    }
-
-    const lines = el("div", { class: "lines" });
-    for (const line of call.lines) lines.append(el("div", { class: `line ${line.who}${line.final === false ? " progress" : ""}`, text: line.text }));
-    body.append(lines);
-
-    if (call.state === "live") {
-      body.append(el("div", { class: `voice-state${voiceFailed ? " voice-error" : ""}`, text: voiceStatus, role: "status" }));
-      if (call.choices?.length && call.lines.filter((l) => l.who === "user").length === 0) {
-        const choices = el("div", { class: "choices" });
-        for (const choice of call.choices) choices.append(button(choice, "secondary-button", () => window.talktome.say(call.id, choice)));
-        body.append(choices);
-      }
-      const controls = el("div", { class: "actions" });
-      controls.append(button(voice?.isMuted() ? "Unmute" : "Mute", "secondary-button", () => {
-        if (!voice) return;
-        voice.setMuted(!voice.isMuted());
-        if (lastState) render(lastState);
-      }));
-      controls.append(button(showText ? "Hide text" : "Type instead", "secondary-button", () => {
-        showText = !showText;
-        if (lastState) render(lastState);
-      }));
-      controls.append(button("End", "primary-button end", () => window.talktome.hangUp(call.id)));
-      body.append(controls);
-      if (showText) {
-        const input = el("input", { class: "say", type: "text", placeholder: "Type a message, then press Return", "aria-label": "What you say" });
-        input.addEventListener("keydown", (event) => {
-          if (event.key !== "Enter" || !input.value.trim()) return;
-          const text = input.value;
-          input.value = "";
-          drafts.delete(call.id);
-          void window.talktome.say(call.id, text);
-        });
-        body.append(el("div", { class: "compose" }, input));
-      }
-    } else if (call.state === "calling") {
-      body.append(el("div", { class: "actions" }, button("Cancel", "primary-button end", () => window.talktome.hangUp(call.id))));
-    }
-    return el("section", { class: `card ${call.state}` }, head, body);
+  function startVoice(call: Call): void {
+    voice = new VoiceCall(
+      call.id,
+      (text) => void window.talktome.say(call.id, text),
+      (_text, failed) => {
+        if (!failed) return;
+        // Without speech the call goes on in text: the transcript opens with the cursor in its field.
+        speechFailed = true;
+        voice = null;
+        openTranscript(true);
+        const note = $("t-note");
+        note.textContent = _text.replace(/^Speech unavailable: /, "");
+        note.hidden = false;
+        say.focus();
+      },
+    );
+    void voice.start();
+    stopThreads?.();
+    stopThreads = Threads.start($<HTMLCanvasElement>("canvas"), () => ({
+      user: Boolean(voice && !voice.isMuted() && (voice.level > 0.02 || voice.partial)),
+      agent: Boolean(voice?.playing()) || performance.now() < agentPulseUntil,
+    }));
   }
+
+  function stopVoice(): void {
+    voice?.stop();
+    voice = null;
+  }
+
+  function openTranscript(open: boolean): void {
+    surface.dataset.transcript = open ? "open" : "closed";
+    toggle.setAttribute("aria-expanded", String(open));
+  }
+
+  function renderTranscript(call: Call): void {
+    const partial = voice?.partial ?? "";
+    const key = `${call.id}:${call.lines.length}:${partial}:${call.choices?.length ?? 0}`;
+    if (key === listKey) return;
+    listKey = key;
+    const name = nameOf(call);
+    const rows = call.lines.map((line) =>
+      el(
+        "li",
+        { class: `${line.who}${line.final === false ? " progress" : ""}` },
+        el("span", { class: "who", text: line.who === "user" ? "You" : line.who === "agent" ? name : "" }),
+        el("span", { class: "said", text: line.text }),
+      ),
+    );
+    if (partial) rows.push(el("li", { class: "user partial" }, el("span", { class: "who", text: "You · live" }), el("span", { class: "said", text: partial })));
+    list.replaceChildren(...rows);
+    empty.hidden = rows.length > 0;
+    list.scrollTop = list.scrollHeight;
+
+    const asked = call.choices?.length && !call.lines.some((l) => l.who === "user");
+    choices.replaceChildren(...(asked ? call.choices!.map((choice) => button(choice, "", () => void window.talktome.say(call.id, choice))) : []));
+  }
+
+  function renderStatus(): void {
+    const call = current;
+    if (!call || call.state === "ringing") return;
+    let text = "Listening";
+    let kind = "";
+    if (call.state === "calling") [text, kind] = ["Calling…", "waiting"];
+    else if (call.state === "ended") text = call.ended ?? "Call ended";
+    else if (voice?.playing()) [text, kind] = ["Agent speaking", "agent"];
+    else if (call.waiting) [text, kind] = ["Thinking…", "waiting"];
+    else if (speechFailed) [text, kind] = ["Type to talk", "agent"];
+    else if (voice?.isMuted()) [text, kind] = ["Microphone off", "agent"];
+    else if (voice?.partial) text = "Hearing you";
+    if (status.textContent !== text) status.textContent = text;
+    status.className = `status ${kind}`;
+    interrupt.disabled = !voice?.playing();
+    const muted = Boolean(voice?.isMuted());
+    mute.setAttribute("aria-pressed", String(muted));
+    $("mic-on").hidden = muted;
+    $("mic-off").hidden = !muted;
+    if (call.state === "live" && voice?.partial !== undefined) renderTranscript(call);
+  }
+  setInterval(renderStatus, 150);
+
+  $("accept").addEventListener("click", () => current && void window.talktome.answer(current.id));
+  $("decline").addEventListener("click", () => current && void window.talktome.decline(current.id));
+  $("end").addEventListener("click", () => current && void window.talktome.hangUp(current.id));
+  interrupt.addEventListener("click", () => voice?.stopSpeaking());
+  mute.addEventListener("click", () => {
+    if (!voice) return;
+    voice.setMuted(!voice.isMuted());
+    renderStatus();
+  });
+  toggle.addEventListener("click", () => openTranscript(surface.dataset.transcript !== "open"));
+  $("transcript-close").addEventListener("click", () => openTranscript(false));
+  say.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || !say.value.trim() || !current) return;
+    const text = say.value;
+    say.value = "";
+    void window.talktome.say(current.id, text);
+  });
+
+  // The window lets clicks through, except over the capsule and the transcript.
+  let inside = false;
+  document.addEventListener("mousemove", (event) => {
+    const target = document.elementFromPoint(event.clientX, event.clientY);
+    const over = Boolean(target?.closest(".layer.shown, #surface[data-transcript='open'] #transcript"));
+    if (over !== inside) {
+      inside = over;
+      void window.talktome.pointer(over);
+    }
+  });
 
   window.talktome.onState(render);
   window.talktome.state().then(render);
-  drafts = new Map();
 })();

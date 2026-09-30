@@ -82,9 +82,11 @@ function startHub(): void {
 }
 
 function createPill(): BrowserWindow {
+  // A clear window under the menu bar. The capsule and the transcript are the
+  // only parts that take clicks; the rest passes them through.
   const window = new BrowserWindow({
-    width: 380,
-    height: 340,
+    width: 520,
+    height: 420,
     frame: false,
     transparent: true,
     resizable: false,
@@ -99,6 +101,7 @@ function createPill(): BrowserWindow {
   });
   window.setAlwaysOnTop(true, "floating");
   window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  window.setIgnoreMouseEvents(true, { forward: true });
   window.loadFile(path.join(ui, "pill.html"));
   window.webContents.on("did-finish-load", () => window.webContents.send("state", snapshot()));
   return window;
@@ -108,14 +111,18 @@ function showPill(): void {
   if (!pill || pill.isDestroyed()) pill = createPill();
   const area = screen.getPrimaryDisplay().workArea;
   const [width] = pill.getSize();
-  pill.setPosition(Math.round(area.x + (area.width - width) / 2), area.y + 12);
+  pill.setPosition(Math.round(area.x + (area.width - width) / 2), area.y);
   if (pill.webContents.isLoading()) pill.once("ready-to-show", () => pill?.showInactive());
   else pill.showInactive();
 }
 
+let hideTimer: NodeJS.Timeout | undefined;
+
 function updatePill(open: boolean): void {
+  clearTimeout(hideTimer);
   if (open) showPill();
-  else if (pill && !pill.isDestroyed() && pill.isVisible()) pill.hide();
+  // Let the capsule go back under the menu bar before the window goes.
+  else if (pill && !pill.isDestroyed() && pill.isVisible()) hideTimer = setTimeout(() => pill?.hide(), 700);
 }
 
 function openAgents(): void {
@@ -191,6 +198,7 @@ handle("hang-up", (callId: string) => phone?.hangUp(callId));
 handle("call-agent", (agentId: string, targetId: string, mode: "join" | "continue" | "new") => phone?.callAgent(agentId, targetId, mode));
 handle("dismiss-notice", (noticeId: string) => phone?.dismissNotice(noticeId));
 handle("open-agents", () => openAgents());
+handle("pointer", (inside: boolean) => pill?.setIgnoreMouseEvents(!inside, { forward: true }));
 
 // Setting up machines.
 handle("ssh-hosts", () => servers.sshHosts());

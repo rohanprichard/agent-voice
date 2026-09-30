@@ -23,6 +23,7 @@ interface Window {
     callAgent(agentId: string, targetId: string, mode: "join" | "continue" | "new"): Promise<string>;
     dismissNotice(noticeId: string): Promise<void>;
     openAgents(): Promise<void>;
+    pointer(inside: boolean): Promise<void>;
     sshHosts(): Promise<string[]>;
     inspect(place: string): Promise<Inspection>;
     installUv(place: string): Promise<string>;
