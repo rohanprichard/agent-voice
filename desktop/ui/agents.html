@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; media-src blob:" />
     <title>talktome</title>
     <link rel="stylesheet" href="tokens.css" />
     <link rel="stylesheet" href="agents.css" />
@@ -10,6 +10,7 @@
   <body>
     <main id="agents"></main>
     <script src="../build/ui/dom.js"></script>
+    <script src="../build/ui/threads.js"></script>
     <script src="../build/ui/agents.js"></script>
   </body>
 </html>

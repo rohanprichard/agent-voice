@@ -48,6 +48,12 @@ export class Hub extends EventEmitter {
     this.presence();
   }
 
+  // test asks one server to ring the user with a test call.
+  test(id: string): boolean {
+    const entry = this.links.get(id);
+    return Boolean(entry && entry.link.send({ type: "test.call" }));
+  }
+
   retry(): void {
     for (const { link } of this.links.values()) link.retry();
   }

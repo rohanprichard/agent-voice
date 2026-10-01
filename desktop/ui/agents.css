@@ -221,3 +221,320 @@ pre {
 .panel.required {
   border-color: var(--foreground);
 }
+
+/* ------------------------------------------------------------ speech */
+
+.saved {
+  margin: 0;
+  color: var(--answer);
+  font-weight: 500;
+}
+
+.voices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.voices-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.voice-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.voice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.voice:last-child {
+  border-bottom: 0;
+}
+.voice.chosen {
+  background: var(--accent);
+}
+.voice-pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 6px 8px;
+  border: 0;
+  background: none;
+  color: var(--foreground);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.voice.chosen .voice-name::after {
+  content: "  ✓";
+  color: var(--answer);
+}
+.voice-name {
+  font-weight: 500;
+}
+.voice .ghost-button {
+  min-height: 28px;
+  padding: 0 10px;
+}
+
+/* ------------------------------------------------------------ first run */
+
+.onboard-shell {
+  min-height: calc(100vh - 76px);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 24px;
+}
+.dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  -webkit-app-region: drag;
+}
+.dots li {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--input);
+  transition: width 0.3s ease, background-color 0.3s ease;
+}
+.dots li.done {
+  background: var(--muted-foreground);
+}
+.dots li.now {
+  width: 22px;
+  background: var(--foreground);
+}
+.onboard {
+  align-self: center;
+  justify-self: center;
+  width: min(100%, 420px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+  animation: rise 0.35s ease-out;
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.onboard h1 {
+  margin: 0;
+  font-size: 30px;
+  letter-spacing: -0.02em;
+}
+.onboard .line {
+  margin: -6px 0 6px;
+  color: var(--muted-foreground);
+  font-size: var(--text-lg);
+}
+.onboard .motif {
+  width: 200px;
+  height: 64px;
+  margin-bottom: 6px;
+}
+.onboard-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+}
+.onboard-form .panel {
+  border: 0;
+  padding: 0;
+  background: none;
+}
+.onboard-form .panel > h2 {
+  display: none;
+}
+.primary-button.wide {
+  min-width: 180px;
+  min-height: 40px;
+  margin-top: 8px;
+  border-radius: 20px;
+}
+.ring-me {
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--answer);
+  color: var(--on-semantic);
+  cursor: pointer;
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--answer) 45%, transparent);
+  animation: beckon 2.4s ease-out infinite;
+}
+.ring-me:hover {
+  background: var(--answer-hover);
+}
+.ring-me svg {
+  width: 30px;
+  height: 30px;
+  fill: currentColor;
+}
+@keyframes beckon {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--answer) 45%, transparent);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 18px color-mix(in srgb, var(--answer) 0%, transparent);
+  }
+}
+.tips {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.tips li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  text-align: left;
+}
+.tips li + li {
+  border-top: 1px solid var(--border);
+}
+.onboard-foot {
+  display: flex;
+  justify-content: space-between;
+}
+.link {
+  border: 0;
+  background: none;
+  padding: 4px 0;
+  color: var(--muted-foreground);
+  font: var(--text-sm) var(--font-sans);
+  cursor: pointer;
+}
+.link:hover {
+  color: var(--foreground);
+}
+@media (prefers-reduced-motion: reduce) {
+  .onboard,
+  .ring-me {
+    animation: none;
+  }
+}
+.primary-button.wide:disabled {
+  opacity: 0.25;
+}
+button.hidden {
+  display: none;
+}
+
+/* ------------------------------------------------------------ setup: this Mac */
+
+.mac-card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  text-align: left;
+  overflow: hidden;
+}
+.mac-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 14px 0 16px;
+}
+.mac-card > .mac-row + .mac-row,
+.mac-card > .mac-row + .mac-item,
+.mac-card > .mac-item + .mac-row,
+.mac-card > .mac-item + .mac-item {
+  border-top: 1px solid var(--border);
+}
+.mac-item .mac-row {
+  min-height: 44px;
+}
+.mac-name {
+  font-weight: 500;
+}
+.mac-ok {
+  color: var(--muted-foreground);
+  font-size: var(--text-sm);
+}
+.mac-ok::first-letter {
+  color: var(--answer);
+}
+.mac-act {
+  height: 28px;
+  padding: 0 14px;
+  border: 1px solid var(--input);
+  border-radius: 14px;
+  background: transparent;
+  color: var(--foreground);
+  font: 500 var(--text-sm) var(--font-sans);
+  cursor: pointer;
+}
+.mac-act:hover:not(:disabled) {
+  background: var(--accent);
+}
+.mac-act:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.mac-group {
+  padding: 14px 16px 6px;
+  border-top: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.mac-group + .mac-row,
+.mac-group + .mac-item {
+  border-top: 0 !important;
+}
+.mac-note {
+  display: block;
+  margin: -6px 16px 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+}
+.mac-wait,
+.mac-error {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
+.mac-error {
+  color: var(--destructive);
+}
+.mac-card > .mac-wait:first-child {
+  border-top: 0;
+}

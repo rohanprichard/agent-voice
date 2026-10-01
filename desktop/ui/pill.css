@@ -390,7 +390,7 @@ button {
   top: calc(var(--top) + 64px);
   left: calc(50% - var(--pill-width) / 2 + 14px);
   width: 360px;
-  max-height: 300px;
+  max-height: 380px;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -444,6 +444,8 @@ button {
 }
 
 #t-list {
+  flex: 1 1 auto;
+  min-height: 0;
   list-style: none;
   margin: 0;
   padding: 12px 14px 4px;
@@ -496,11 +498,13 @@ button {
   color: var(--muted-foreground);
 }
 
+/* The list scrolls; the choices and the note keep their room below it. */
 #choices {
+  flex: none;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 4px 14px 0;
+  padding: 6px 14px 14px;
 }
 
 #choices:empty {
@@ -525,7 +529,12 @@ svg[hidden] {
 }
 
 #t-note {
+  flex: none;
   margin: 10px 14px 12px;
   font-size: 11px;
   color: var(--muted-foreground);
+}
+
+#transcript header {
+  flex: none;
 }

@@ -133,7 +133,7 @@ class VoiceCall {
     try {
       const token = await window.talktome.speechToken(this.callId, "tts_websocket");
       if (this.stopped) return;
-      const voice = "Xb7hH8MSUJpSbSDYk0k2";
+      const voice = await window.talktome.speechVoice();
       const query = new URLSearchParams({
         model_id: "eleven_flash_v2_5", output_format: "mp3_44100_128", single_use_token: token,
       });

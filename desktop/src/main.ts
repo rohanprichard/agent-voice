@@ -54,11 +54,20 @@ type AppState = Snapshot & {
   servers: ReturnType<Hub["servers"]>;
   localInstalled: boolean;
   speechKey: boolean;
+  voice: string;
+  onboarded: boolean;
 };
 
 function snapshot(): AppState {
   const base = phone?.snapshot() ?? { connected: false, agents: [], calls: [], notices: [] };
-  return { ...base, servers: hub?.servers() ?? [], localInstalled: servers.localServerBin() !== null, speechKey: elevenLabsKey() !== "" };
+  return {
+    ...base,
+    servers: hub?.servers() ?? [],
+    localInstalled: servers.localServerBin() !== null,
+    speechKey: elevenLabsKey() !== "",
+    voice: settings.voice ?? servers.DEFAULT_VOICE,
+    onboarded: Boolean(settings.onboarded),
+  };
 }
 
 function broadcast(): void {
@@ -95,7 +104,7 @@ function createPill(): BrowserWindow {
   // only parts that take clicks; the rest passes them through.
   const window = new BrowserWindow({
     width: 520,
-    height: 420,
+    height: 480,
     frame: false,
     transparent: true,
     resizable: false,
@@ -260,11 +269,36 @@ handle("set-speech-key", async (key: string) => {
     const sealed = safeStorage.isEncryptionAvailable();
     settings = { ...settings, elevenlabs: sealed ? safeStorage.encryptString(key).toString("base64") : key, sealed };
   } else {
-    settings = { servers: settings.servers };
+    delete settings.elevenlabs;
+    delete settings.sealed;
   }
   servers.saveSettings(settingsFile(), settings);
   broadcast();
   return "";
+});
+
+function saveSettings(change: Partial<servers.Settings>): void {
+  settings = { ...settings, ...change };
+  servers.saveSettings(settingsFile(), settings);
+  broadcast();
+}
+
+handle("voices", () => {
+  const key = elevenLabsKey();
+  if (!key) throw new Error("Add your ElevenLabs key first.");
+  return servers.elevenLabsVoices(key);
+});
+handle("voice-preview", (url: string) => {
+  if (!/^https:\/\/[\w.-]+\.(googleapis\.com|elevenlabs\.io)\//.test(url)) throw new Error("That sample is not from ElevenLabs.");
+  return servers.voicePreview(url);
+});
+handle("set-voice", (voice: string) => saveSettings({ voice }));
+handle("speech-voice", () => settings.voice ?? servers.DEFAULT_VOICE);
+handle("finish-onboarding", () => saveSettings({ onboarded: true }));
+// test-call asks this Mac's server to ring, so setup can end with a real call.
+handle("test-call", () => {
+  if (!elevenLabsKey()) throw new Error("Add your ElevenLabs key first.");
+  if (!hub?.test(servers.LOCAL)) throw new Error("This Mac is not connected yet.");
 });
 
 if (!app.requestSingleInstanceLock()) {
@@ -278,7 +312,7 @@ if (!app.requestSingleInstanceLock()) {
     settings = servers.loadSettings(settingsFile());
     startHub();
     powerMonitor.on("resume", () => hub?.retry());
-    if (!elevenLabsKey() || (!servers.localServerBin() && settings.servers.length === 0)) openAgents();
+    if (!settings.onboarded || !elevenLabsKey()) openAgents();
     updateTray();
   });
   app.on("before-quit", () => hub?.stop());

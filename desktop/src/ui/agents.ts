@@ -1,5 +1,6 @@
-// The agents window: the machines where agents run, setting them up, their
-// projects, the speech key, and notices.
+// The agents window. On the first run it is a short setup: the speech key and
+// a voice, this Mac, and a test call. After that it shows the machines where
+// agents run, their projects, speech, and notices.
 
 (() => {
   followTheme();
@@ -8,7 +9,19 @@
   let last: Snapshot | null = null;
   let sshHosts: string[] = [];
   let keyError = "";
+  let keySaved = false; // the key was saved just now, so say so where it was typed
   let speechKey = false;
+  let voices: Voice[] | null = null;
+  let voicesError = "";
+  let loadingVoices = false;
+  let sample: HTMLAudioElement | null = null;
+
+  // The first-run setup.
+  const steps = ["Welcome", "Speech", "This Mac", "Test call", "Done"];
+  let stage = 0;
+  let testError = "";
+  let testAsked = false;
+  let trustPoll: number | undefined;
 
   // The setup checklist that is open, if any.
   type Setup = { place: string; found: Inspection | null; busy: string; error: string };
@@ -18,7 +31,8 @@
     last = state;
     speechKey = state.speechKey;
     if (!force && document.activeElement?.tagName === "INPUT") return; // do not wipe a form while the user types
-    root.replaceChildren(...localView(state));
+    root.replaceChildren(...(state.onboarded ? localView(state) : onboarding(state)));
+    watchCodexTrust(state);
   }
 
   function rerender(): void {
@@ -194,30 +208,253 @@
 
   function speech(state: Snapshot): HTMLElement {
     const panel = el("section", { class: `panel${state.speechKey ? "" : " required"}` }, el("h2", { text: "Speech" }));
+    if (!state.speechKey) panel.append(el("p", { class: "muted", text: "Calls are voice only. Speech runs on your own ElevenLabs account." }));
+    panel.append(...speechBody(state));
+    return panel;
+  }
+
+  // speechBody is the key and the voice, for the Speech section and for setup.
+  function speechBody(state: Snapshot): HTMLElement[] {
     if (state.speechKey) {
-      panel.append(el("p", { class: "muted", text: "Your ElevenLabs key is saved in the keychain." }));
-      panel.append(button("Remove the key", "ghost-button", () => void window.talktome.setSpeechKey("")));
-      return panel;
+      const parts: HTMLElement[] = [];
+      parts.push(el("p", { class: keySaved ? "saved" : "muted small", text: keySaved ? "✓ Key saved" : "Key saved in your keychain" }));
+      parts.push(voicePicker(state));
+      parts.push(
+        el(
+          "div",
+          { class: "target-actions" },
+          button("Remove the key", "ghost-button", () => {
+            keySaved = false;
+            voices = null;
+            void window.talktome.setSpeechKey("");
+          }),
+        ),
+      );
+      return parts;
     }
-    panel.append(
-      el("p", { class: "muted", text: "Calls are voice only. talktome uses your own ElevenLabs account to hear you and to speak the agent's replies. Add a key to make and answer calls." }),
-    );
-    const key = el("input", { type: "password", placeholder: "ElevenLabs API key", "aria-label": "ElevenLabs API key" });
+    const key = el("input", { type: "password", placeholder: "Paste your ElevenLabs API key", "aria-label": "ElevenLabs API key", id: "speech-key" });
     const save = button("Save", "primary-button", async () => {
-      if (!key.value.trim()) return;
+      if (!key.value.trim()) {
+        keyError = "Paste a key first.";
+        rerender();
+        return;
+      }
       save.disabled = true;
       save.textContent = "Checking…";
       keyError = await window.talktome.setSpeechKey(key.value);
+      keySaved = !keyError;
       key.blur();
-      rerender();
+      if (last) render(await window.talktome.state(), true);
     });
     key.addEventListener("keydown", (event) => {
       if (event.key === "Enter") save.click();
     });
-    panel.append(el("div", { class: "add-server" }, key, save));
-    if (keyError) panel.append(el("p", { class: "error small", text: keyError }));
-    panel.append(el("p", { class: "muted small", text: "Make a key at elevenlabs.io, in Developers > API keys. It needs speech to text and text to speech." }));
-    return panel;
+    const parts = [el("div", { class: "add-server" }, key, save)];
+    if (keyError) parts.push(el("p", { class: "error small", text: keyError }));
+    parts.push(el("p", { class: "muted small", text: "elevenlabs.io › Developers › API keys" }));
+    return parts;
+  }
+
+  function voicePicker(state: Snapshot): HTMLElement {
+    const box = el("div", { class: "voices" }, el("div", { class: "voices-title", text: "Voice" }));
+    if (!voices && !voicesError) {
+      void loadVoices();
+      box.append(el("p", { class: "muted small", text: "Loading your voices…" }));
+      return box;
+    }
+    if (voicesError) {
+      box.append(el("p", { class: "error small", text: voicesError }), button("Try again", "ghost-button", () => {
+        voicesError = "";
+        rerender();
+      }));
+      return box;
+    }
+    const list = el("div", { class: "voice-list", role: "radiogroup", "aria-label": "Voice" });
+    for (const voice of voices!) {
+      const chosen = voice.id === state.voice;
+      const row = el(
+        "div",
+        { class: `voice${chosen ? " chosen" : ""}` },
+        el("button", { class: "voice-pick", type: "button", role: "radio", "aria-checked": String(chosen) }, el("span", { class: "voice-name", text: voice.name }), el("span", { class: "muted small", text: voice.description })),
+      );
+      row.querySelector(".voice-pick")!.addEventListener("click", () => void window.talktome.setVoice(voice.id));
+      if (voice.preview) row.append(button("Play", "ghost-button", () => void play(voice.preview)));
+      list.append(row);
+    }
+    box.append(list);
+    return box;
+  }
+
+  async function loadVoices(): Promise<void> {
+    if (loadingVoices) return;
+    loadingVoices = true;
+    try {
+      voices = (await window.talktome.voices()).slice(0, 40);
+    } catch (error) {
+      voicesError = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : "The voices did not load.";
+    }
+    loadingVoices = false;
+    rerender();
+  }
+
+  async function play(url: string): Promise<void> {
+    sample?.pause();
+    const data = await window.talktome.voicePreview(url);
+    const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+    sample = new Audio(URL.createObjectURL(new Blob([bytes], { type: "audio/mpeg" })));
+    void sample.play();
+  }
+
+  // The first-run setup
+
+  function onboarding(state: Snapshot): HTMLElement[] {
+    const local = state.servers.find((s) => s.id === "local");
+    const dots = el("ol", { class: "dots", "aria-label": `Step ${stage + 1} of ${steps.length}` });
+    steps.forEach((name, i) => dots.append(el("li", { class: i === stage ? "now" : i < stage ? "done" : "", title: name })));
+    const page = el("section", { class: "onboard" });
+    const next = (label = "Continue", enabled = true) => {
+      const b = button(label, "primary-button wide", () => {
+        stage += 1;
+        rerender();
+      });
+      b.disabled = !enabled;
+      return b;
+    };
+    const title = (text: string, line?: string) => {
+      page.append(el("h1", { text }));
+      if (line) page.append(el("p", { class: "line", text: line }));
+    };
+
+    if (stage === 0) {
+      const canvas = el("canvas", { class: "motif", "aria-hidden": "true" });
+      page.append(canvas);
+      startMotif(canvas);
+      title("talktome", "Your agents call you. You call them.");
+      page.append(next("Get started"));
+    } else if (stage === 1) {
+      title("Your voice", "Speech runs on your own ElevenLabs account.");
+      page.append(el("div", { class: "onboard-form" }, ...speechBody(state)), next("Continue", state.speechKey));
+    } else if (stage === 2) {
+      if (setup?.place !== "local") void openSetup("local");
+      title("This Mac");
+      page.append(macCard(setup));
+      page.append(next("Continue", local?.state === "connected"));
+    } else if (stage === 3) {
+      const test = state.calls.find((c) => c.reason === "talktome test call");
+      const passed = Boolean(test?.lines.some((l) => l.who === "user") && test.lines.some((l) => l.who === "agent" && l.text.startsWith("I heard you say")));
+      title("Try a call", "Answer, say anything, and hear it back.");
+      const ring = el("button", { class: "ring-me", type: "button", "aria-label": "Ring me" });
+      ring.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85a1 1 0 0 1-1.41 0L.29 13.09a1 1 0 0 1 0-1.41C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.68a1 1 0 0 1 0 1.41l-2.48 2.48a1 1 0 0 1-1.41 0 12.3 12.3 0 0 0-2.66-1.85c-.33-.16-.56-.51-.56-.9v-3.1C15.15 9.25 13.6 9 12 9Z"/></svg>';
+      ring.addEventListener("click", async () => {
+        testError = "";
+        testAsked = true;
+        try {
+          await window.talktome.testCall();
+        } catch (error) {
+          testError = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : "The test call did not start.";
+        }
+        rerender();
+      });
+      page.append(ring, el("p", { class: "small muted", text: passed ? "" : testAsked ? "Ringing at the top of your screen" : "Ring me" }));
+      if (testError) page.append(el("p", { class: "error small", text: testError }));
+      if (passed) page.append(el("p", { class: "saved", text: "✓ It works" }), next());
+      else {
+        page.append(
+          button("Skip the test", "link", () => {
+            stage += 1;
+            rerender();
+          }),
+        );
+      }
+    } else {
+      title("You're set");
+      page.append(
+        el(
+          "ul",
+          { class: "tips" },
+          el("li", {}, el("span", { class: "muted", text: "Ask an agent" }), el("span", { text: "“Call me when you're done.”" })),
+          el("li", {}, el("span", { class: "muted", text: "Call an agent" }), el("span", { text: "Menu bar icon, then a project" })),
+        ),
+        button("Done", "primary-button wide", () => void window.talktome.finishOnboarding()),
+      );
+    }
+    const foot = el("footer", { class: "onboard-foot" });
+    if (stage > 0) {
+      foot.append(
+        button("Back", "link", () => {
+          stage -= 1;
+          rerender();
+        }),
+      );
+    } else foot.append(el("span"));
+    if (stage < steps.length - 1) foot.append(button("Skip setup", "link", () => void window.talktome.finishOnboarding()));
+    return [el("div", { class: "onboard-shell" }, dots, page, foot)];
+  }
+
+  // macCard is setup's view of this Mac: one row for each part, with its state
+  // or its one action on the right.
+  function macCard(s: Setup | null): HTMLElement {
+    const card = el("div", { class: "mac-card" });
+    const f = s?.found;
+    const busy = Boolean(s?.busy);
+    const row = (name: string, right: HTMLElement, note?: HTMLElement) => {
+      const r = el("div", { class: "mac-row" }, el("span", { class: "mac-name", text: name }), right);
+      card.append(note ? el("div", { class: "mac-item" }, r, note) : r);
+    };
+    const ok = (text = "Ready") => el("span", { class: "mac-ok", text: `✓ ${text}` });
+    const act = (label: string, run: () => void) => {
+      const b = button(label, "mac-act", run);
+      b.disabled = busy;
+      return b;
+    };
+    if (!f) {
+      card.append(el("div", { class: "mac-wait", text: "Checking this Mac…" }));
+      return card;
+    }
+    row("uv", f.uv ? ok() : act("Install", () => void step("Installing uv…", () => window.talktome.installUv("local"))));
+    const server = f.server ? ok(f.server) : act("Install", () => void step("Installing talktome-server…", () => window.talktome.installServer("local")));
+    if (!f.server && !f.uv) (server as HTMLButtonElement).disabled = true;
+    row("talktome-server", server);
+    if (f.server && f.hosts.length) {
+      card.append(el("div", { class: "mac-group", text: "Agents" }));
+      for (const h of f.hosts) {
+        const name = hostNames[h.host] ?? h.host;
+        const right = h.current ? ok("Added") : act(h.installed ? "Update" : "Add", () => void step(`Adding talktome to ${name}…`, () => window.talktome.installPlugin("local", h.host)));
+        const trust = h.host === "codex" && h.current && h.hooks_trusted === false;
+        row(name, right, trust ? el("span", { class: "mac-note", text: "One step in Codex: open a new session, type /hooks, and trust talktome." }) : undefined);
+      }
+    }
+    if (s?.busy) card.append(el("div", { class: "mac-wait", text: s.busy }));
+    if (s?.error) card.append(el("div", { class: "mac-error", text: s.error }));
+    return card;
+  }
+
+  // The welcome screen draws the two threads from the call pill, taking turns.
+  let stopMotif: (() => void) | null = null;
+  function startMotif(canvas: HTMLCanvasElement): void {
+    stopMotif?.();
+    const start = performance.now();
+    stopMotif = Threads.start(canvas, () => {
+      const t = ((performance.now() - start) / 1000) % 6;
+      return { user: t > 0.6 && t < 2.4, agent: t > 3.2 && t < 5.2 };
+    });
+  }
+
+  // watchCodexTrust checks again every few seconds while setup waits for the
+  // user to trust the Codex hooks, so the stage turns green by itself.
+  function watchCodexTrust(state: Snapshot): void {
+    const waiting = !state.onboarded && stage === 2 && setup?.found?.hosts.some((h) => h.host === "codex" && h.current && h.hooks_trusted === false);
+    if (waiting && trustPoll === undefined) {
+      trustPoll = window.setInterval(async () => {
+        if (!setup || setup.busy) return;
+        const found = await window.talktome.inspect(setup.place);
+        if (setup) setup = { ...setup, found };
+        rerender();
+      }, 4000);
+    } else if (!waiting && trustPoll !== undefined) {
+      clearInterval(trustPoll);
+      trustPoll = undefined;
+    }
   }
 
   function notices(state: Snapshot): HTMLElement {

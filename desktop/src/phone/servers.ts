@@ -157,12 +157,18 @@ export function sshHosts(file = path.join(os.homedir(), ".ssh", "config")): stri
   return [...hosts].sort();
 }
 
-export type Settings = { servers: string[]; elevenlabs?: string; sealed?: boolean };
+export type Settings = {
+  servers: string[];
+  elevenlabs?: string;
+  sealed?: boolean;
+  voice?: string; // an ElevenLabs voice id
+  onboarded?: boolean;
+};
 
 export function loadSettings(file: string): Settings {
   try {
     const saved = JSON.parse(fs.readFileSync(file, "utf8")) as Settings;
-    return { servers: saved.servers ?? [], elevenlabs: saved.elevenlabs, sealed: saved.sealed };
+    return { ...saved, servers: saved.servers ?? [] };
   } catch {
     return { servers: [] };
   }
@@ -179,6 +185,9 @@ export async function elevenLabsToken(apiKey: string, kind: "realtime_scribe" | 
   const response = await fetch(`https://api.elevenlabs.io/v1/single-use-token/${kind}`, {
     method: "POST",
     headers: { "xi-api-key": apiKey },
+    signal: AbortSignal.timeout(10_000),
+  }).catch(() => {
+    throw new Error("ElevenLabs did not answer. Check your internet connection, and try again.");
   });
   const data = (await response.json().catch(() => ({}))) as { token?: string; detail?: { message?: string } | string };
   if (!response.ok || !data.token) {
@@ -186,4 +195,35 @@ export async function elevenLabsToken(apiKey: string, kind: "realtime_scribe" | 
     throw new Error(response.status === 401 ? "ElevenLabs refused this key. Check that you copied all of it." : detail || `ElevenLabs failed (${response.status}).`);
   }
   return data.token;
+}
+
+// The voice a call uses when the user has not picked one: Alice, a clear
+// British voice in every ElevenLabs account.
+export const DEFAULT_VOICE = "Xb7hH8MSUJpSbSDYk0k2";
+
+export type Voice = { id: string; name: string; description: string; preview: string };
+
+// elevenLabsVoices lists the voices in the user's ElevenLabs account.
+export async function elevenLabsVoices(apiKey: string): Promise<Voice[]> {
+  const response = await fetch("https://api.elevenlabs.io/v1/voices", {
+    headers: { "xi-api-key": apiKey },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) throw new Error(`ElevenLabs did not list the voices (${response.status}).`);
+  const data = (await response.json()) as {
+    voices?: Array<{ voice_id: string; name: string; preview_url?: string; labels?: Record<string, string> }>;
+  };
+  return (data.voices ?? []).map((v) => ({
+    id: v.voice_id,
+    name: v.name,
+    description: [v.labels?.gender, v.labels?.accent, v.labels?.age, v.labels?.descriptive ?? v.labels?.description].filter(Boolean).join(", "),
+    preview: v.preview_url ?? "",
+  }));
+}
+
+// voicePreview fetches a voice's sample, for the window to play.
+export async function voicePreview(url: string): Promise<string> {
+  const response = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+  if (!response.ok) throw new Error("The sample could not load.");
+  return Buffer.from(await response.arrayBuffer()).toString("base64");
 }

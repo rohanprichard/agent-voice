@@ -2,8 +2,11 @@
 
 type ServerState = import("../phone/hub").ServerState;
 type Inspection = import("../phone/servers").Inspection;
+type Voice = import("../phone/servers").Voice;
 type Snapshot = import("../phone/phone").Snapshot & {
   servers: ServerState[];
+  voice: string;
+  onboarded: boolean;
   localInstalled: boolean;
   speechKey: boolean;
 };
@@ -33,5 +36,11 @@ interface Window {
     removeServer(host: string): Promise<void>;
     reconnect(): Promise<void>;
     setSpeechKey(key: string): Promise<string>;
+    voices(): Promise<Voice[]>;
+    voicePreview(url: string): Promise<string>;
+    setVoice(voice: string): Promise<void>;
+    speechVoice(): Promise<string>;
+    testCall(): Promise<void>;
+    finishOnboarding(): Promise<void>;
   };
 }
