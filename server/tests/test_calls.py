@@ -70,3 +70,17 @@ def test_choices_by_name_or_number():
     assert match_choice("the first", ["us", "eu"]) == {"index": 0, "label": "us"}
     assert match_choice("either", ["us", "eu"]) is None
     assert speech_time("x" * 1000) == 20.0
+
+
+async def test_the_app_can_ask_for_a_test_call(world):
+    app = world.app
+    app.send("test.call")
+    start = await app.next("call.start")
+    assert start["reason"] == "talktome test call"
+    assert "Say anything" in start["body"]["greeting"]
+    app.send("call.answered", call_id=start["call_id"])
+    app.send("turn.user", call_id=start["call_id"], turn_id="t1", text="Hello there.")
+    reply = await app.next("turn.agent")
+    assert reply["text"] == "I heard you say: Hello there. talktome works. Goodbye."
+    assert reply["final"] is True
+    await app.next("call.end", timeout=10)

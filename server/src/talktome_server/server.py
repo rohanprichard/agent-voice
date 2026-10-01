@@ -12,7 +12,7 @@ from pathlib import Path
 
 from . import __version__, paths
 from .api import Api, Client
-from .calls import Caller
+from .calls import Caller, CallIsLive
 from .inbound import Inbound
 
 log = logging.getLogger("talktome")
@@ -33,6 +33,24 @@ async def take_over(path: Path) -> None:
         if not path.exists():
             return
         await asyncio.sleep(0.1)
+
+
+async def test_call(caller: Caller, name: str) -> None:
+    """A call the app asks for during setup: it rings, repeats what the user
+    says, and hangs up. It checks the ring, the microphone, and speech both ways."""
+    try:
+        result = await caller.call(
+            "talktome test call", greeting=f"This is talktome on {name}. Say anything, and I will repeat it."
+        )
+    except CallIsLive:
+        return
+    if not result.get("answered") or result.get("ended"):
+        return
+    heard = result.get("user_said")
+    if heard:
+        await caller.end(f"I heard you say: {heard} talktome works. Goodbye.")
+    else:
+        await caller.end("I did not hear anything. Check your microphone, and try again. Goodbye.")
 
 
 async def serve(
@@ -70,9 +88,15 @@ async def serve(
             except TimeoutError:
                 pass
 
+    tests: set[asyncio.Task] = set()
+
     async def read():
         async for frame in link.frames():
-            if caller.owns(frame.get("call_id", "")):
+            if frame["type"] == "test.call":
+                task = asyncio.create_task(test_call(caller, name))
+                tests.add(task)
+                task.add_done_callback(tests.discard)
+            elif caller.owns(frame.get("call_id", "")):
                 caller.dispatch(frame)
             else:
                 inbound.dispatch(frame)
@@ -83,7 +107,7 @@ async def serve(
     try:
         await asyncio.wait({reading, quitting}, return_when=asyncio.FIRST_COMPLETED)
     finally:
-        for task in (publishing, reading, quitting, *inbound.tasks):
+        for task in (publishing, reading, quitting, *inbound.tasks, *tests):
             task.cancel()
         server.close()
         socket_path.unlink(missing_ok=True)
