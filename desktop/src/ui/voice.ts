@@ -104,8 +104,18 @@ class VoiceCall {
     }, 500 * this.reconnects);
   }
 
+  // explain turns an ElevenLabs error into words the user can act on.
+  static explain(code: string, message = ""): string {
+    if (code === "quota_exceeded" || /quota|credits/i.test(message)) {
+      return "Your ElevenLabs account is out of credits. Add credits at elevenlabs.io, then call again.";
+    }
+    if (code === "auth_error" || /unauthori[sz]ed|invalid api key/i.test(message)) return "ElevenLabs refused the key. Check it in talktome.";
+    if (code === "rate_limited" || /rate limit/i.test(message)) return "ElevenLabs is busy right now. Try again in a moment.";
+    return message || "Speech stopped.";
+  }
+
   private receive(raw: string): void {
-    let event: { message_type?: string; text?: string };
+    let event: { message_type?: string; text?: string; error?: string; message?: string };
     try { event = JSON.parse(raw); } catch { return; }
     if (event.message_type === "committed_transcript" && event.text?.trim()) {
       this.partial = "";
@@ -113,8 +123,8 @@ class VoiceCall {
       this.onText(event.text.trim());
     } else if (event.message_type === "partial_transcript" && event.text?.trim()) {
       this.partial = event.text.trim();
-    } else if (["error", "auth_error", "rate_limited"].includes(event.message_type ?? "")) {
-      this.fail("Speech input failed.");
+    } else if (event.message_type && /error|quota|limit/.test(event.message_type)) {
+      this.fail(VoiceCall.explain(event.message_type, event.error ?? event.message));
     }
   }
 
@@ -148,17 +158,18 @@ class VoiceCall {
           socket.send(JSON.stringify({ text: "" }));
         }, { once: true });
         socket.addEventListener("message", (message) => {
-          let value: { audio?: string; isFinal?: boolean; is_final?: boolean };
+          let value: { audio?: string; isFinal?: boolean; is_final?: boolean; error?: string; message?: string };
           try { value = JSON.parse(String(message.data)); } catch { return; }
+          if (value.error) { clearTimeout(timer); reject(new Error(VoiceCall.explain(value.error, value.message))); return; }
           if (value.audio) parts.push(Uint8Array.from(atob(value.audio), (char) => char.charCodeAt(0)));
           // ElevenLabs marks the last message with isFinal.
           if (value.isFinal || value.is_final) { clearTimeout(timer); resolve(parts); }
         });
         socket.addEventListener("error", () => { clearTimeout(timer); reject(new Error("Speech output could not connect.")); }, { once: true });
-        socket.addEventListener("close", () => {
+        socket.addEventListener("close", (event) => {
           clearTimeout(timer);
           if (parts.length) resolve(parts);
-          else reject(new Error("Speech output closed."));
+          else reject(new Error(event.reason ? VoiceCall.explain("", event.reason) : "Speech output closed."));
         }, { once: true });
       });
       socket.close();
