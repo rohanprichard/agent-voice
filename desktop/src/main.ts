@@ -6,7 +6,6 @@
 // server over SSH. Speech uses the user's own ElevenLabs key.
 
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, Notification, powerMonitor, safeStorage, screen, Tray } from "electron";
-import fs from "node:fs";
 import path from "node:path";
 
 import { Hub } from "./phone/hub";
@@ -21,12 +20,10 @@ app.setName("talktome");
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 if (process.env.TALKTOME_DATA_DIR) app.setPath("userData", process.env.TALKTOME_DATA_DIR);
 
-// A packaged app carries the talktome-server wheel, so setting up a machine
-// needs no package index.
+// A packaged app installs the talktome-server release from PyPI that has the
+// same version as the app.
 if (app.isPackaged && !process.env.TALKTOME_SERVER_SOURCE) {
-  const dir = path.join(process.resourcesPath, "talktome-server");
-  const wheel = fs.existsSync(dir) ? fs.readdirSync(dir).find((name) => name.endsWith(".whl")) : undefined;
-  if (wheel) process.env.TALKTOME_SERVER_SOURCE = path.join(dir, wheel);
+  process.env.TALKTOME_SERVER_SOURCE = `talktome-server==${app.getVersion()}`;
 }
 
 let hub: Hub | null = null;
