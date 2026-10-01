@@ -122,13 +122,18 @@ class VoiceCall {
           socket.send(JSON.stringify({ text: "" }));
         }, { once: true });
         socket.addEventListener("message", (message) => {
-          let value: { audio?: string; is_final?: boolean };
+          let value: { audio?: string; isFinal?: boolean; is_final?: boolean };
           try { value = JSON.parse(String(message.data)); } catch { return; }
           if (value.audio) parts.push(Uint8Array.from(atob(value.audio), (char) => char.charCodeAt(0)));
-          if (value.is_final) { clearTimeout(timer); resolve(parts); }
+          // ElevenLabs marks the last message with isFinal.
+          if (value.isFinal || value.is_final) { clearTimeout(timer); resolve(parts); }
         });
         socket.addEventListener("error", () => { clearTimeout(timer); reject(new Error("Speech output could not connect.")); }, { once: true });
-        socket.addEventListener("close", () => { clearTimeout(timer); reject(new Error("Speech output closed.")); }, { once: true });
+        socket.addEventListener("close", () => {
+          clearTimeout(timer);
+          if (parts.length) resolve(parts);
+          else reject(new Error("Speech output closed."));
+        }, { once: true });
       });
       socket.close();
       this.output = null;
@@ -175,6 +180,16 @@ class VoiceCall {
   }
 
   isMuted(): boolean { return this.muted; }
+
+  // finish ends the call's listening, lets the replies that wait play out,
+  // and then stops. A goodbye is the last thing the user hears.
+  async finish(): Promise<void> {
+    this.muted = true;
+    this.input?.close();
+    this.stream?.getTracks().forEach((track) => track.stop());
+    await this.pendingSpeech;
+    this.stop();
+  }
 
   stop(): void {
     this.stopped = true;

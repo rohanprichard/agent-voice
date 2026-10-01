@@ -19,6 +19,7 @@
   type Shape = "hidden" | "attached" | "settled";
   let shape: Shape = "hidden";
   let current: Call | null = null;
+  let ending = false;
   let speechKey = false;
   let voice: VoiceCall | null = null;
   let speechFailed = false;
@@ -49,7 +50,9 @@
     later(300, () => setShape("settled"));
   }
 
+  // withdraw runs once a call: a second run would bring the capsule back down.
   function withdraw(): void {
+    if (shape === "hidden") return;
     clearTimers();
     ringing.classList.remove("shown");
     pill.classList.remove("shown");
@@ -78,6 +81,7 @@
     if (fresh) {
       stopVoice();
       speechFailed = false;
+      ending = false;
       $("t-note").hidden = true;
       spokenLines = 0;
       listKey = "";
@@ -110,19 +114,25 @@
       withdraw();
       return;
     }
-    if (call.state === "ended") {
-      stopVoice();
-      later(1400, () => {
-        if (current?.id === call.id && current.state === "ended") withdraw();
+    if (call.state === "ended" && !ending) {
+      // When the user hangs up, the capsule goes at once. When the agent
+      // does, its goodbye plays out and the ended call shows for a moment.
+      ending = true;
+      const byUser = call.ended === "You hung up";
+      if (byUser) voice?.stopSpeaking();
+      const done = voice ? voice.finish() : Promise.resolve();
+      voice = null;
+      const shown = new Promise((resolve) => setTimeout(resolve, byUser ? 0 : 600));
+      void Promise.all([done, shown]).then(() => {
+        if (current?.id === call.id) withdraw();
       });
     }
     if (voice && call.state === "live") {
       for (const line of call.lines.slice(spokenLines)) {
         if (line.who === "agent" && line.final !== false) voice.speak(line.text);
       }
+      spokenLines = call.lines.length;
     }
-    if (call.lines.slice(spokenLines).some((line) => line.who === "agent")) agentPulseUntil = performance.now() + 1600;
-    spokenLines = call.lines.length;
     if (call.choices?.length && call.state === "live" && !call.lines.some((l) => l.who === "user")) openTranscript(true);
     renderTranscript(call);
     renderStatus();
@@ -134,13 +144,19 @@
       (text) => void window.talktome.say(call.id, text),
       (text, failed) => {
         if (!failed) return;
-        // A call is voice only. The transcript says what stopped, and the user can end the call.
+        const note = $("t-note");
+        note.hidden = false;
+        // One reply that could not be spoken leaves the call going. Losing the
+        // microphone or the speech input ends what the call can do, and the
+        // transcript says why; the user can end the call.
+        if (!text.startsWith("Speech unavailable: ")) {
+          note.textContent = text;
+          return;
+        }
         speechFailed = true;
         voice = null;
         openTranscript(true);
-        const note = $("t-note");
         note.textContent = text.replace(/^Speech unavailable: /, "Speech stopped: ");
-        note.hidden = false;
       },
     );
     void voice.start();
