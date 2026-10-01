@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld("talktome", {
   voices: () => ipcRenderer.invoke("voices"),
   voicePreview: (url: string) => ipcRenderer.invoke("voice-preview", url),
   setVoice: (voice: string) => ipcRenderer.invoke("set-voice", voice),
+  credits: () => ipcRenderer.invoke("credits"),
   speechVoice: () => ipcRenderer.invoke("speech-voice"),
   testCall: () => ipcRenderer.invoke("test-call"),
   finishOnboarding: () => ipcRenderer.invoke("finish-onboarding"),

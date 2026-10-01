@@ -293,6 +293,10 @@ handle("voice-preview", (url: string) => {
   return servers.voicePreview(url);
 });
 handle("set-voice", (voice: string) => saveSettings({ voice }));
+handle("credits", () => {
+  const key = elevenLabsKey();
+  return key ? servers.elevenLabsCredits(key) : null;
+});
 handle("speech-voice", () => settings.voice ?? servers.DEFAULT_VOICE);
 handle("finish-onboarding", () => saveSettings({ onboarded: true }));
 // test-call asks this Mac's server to ring, so setup can end with a real call.

@@ -15,6 +15,7 @@
   let voicesError = "";
   let loadingVoices = false;
   let sample: HTMLAudioElement | null = null;
+  let credits: { left: number; limit: number } | null | undefined; // undefined until asked
 
   // The first-run setup.
   const steps = ["Welcome", "Speech", "This Mac", "Test call", "Done"];
@@ -218,6 +219,8 @@
     if (state.speechKey) {
       const parts: HTMLElement[] = [];
       parts.push(el("p", { class: keySaved ? "saved" : "muted small", text: keySaved ? "✓ Key saved" : "Key saved in your keychain" }));
+      const quota = creditsLine();
+      if (quota) parts.push(quota);
       parts.push(voicePicker(state));
       parts.push(
         el(
@@ -243,6 +246,7 @@
       save.textContent = "Checking…";
       keyError = await window.talktome.setSpeechKey(key.value);
       keySaved = !keyError;
+      credits = undefined;
       key.blur();
       if (last) render(await window.talktome.state(), true);
     });
@@ -283,6 +287,26 @@
     }
     box.append(list);
     return box;
+  }
+
+  // creditsLine says how much speech the ElevenLabs account has left, and
+  // warns before a call fails for it. A short call uses a few hundred credits.
+  function creditsLine(): HTMLElement | null {
+    if (credits === undefined) {
+      credits = null;
+      void window.talktome.credits().then((found) => {
+        credits = found;
+        rerender();
+      });
+      return null;
+    }
+    if (!credits) return null;
+    const left = credits.left.toLocaleString();
+    if (credits.left < 50) {
+      return el("p", { class: "error small", text: "This ElevenLabs account is out of credits, so calls cannot speak. Add credits at elevenlabs.io." });
+    }
+    if (credits.left < 2000) return el("p", { class: "warn small", text: `${left} ElevenLabs credits left. That is only a few short calls.` });
+    return el("p", { class: "muted small", text: `${left} ElevenLabs credits left` });
   }
 
   async function loadVoices(): Promise<void> {
@@ -357,6 +381,9 @@
       });
       page.append(ring, el("p", { class: "small muted", text: passed ? "" : testAsked ? "Ringing at the top of your screen" : "Ring me" }));
       if (testError) page.append(el("p", { class: "error small", text: testError }));
+      if (!passed && test?.state === "ended" && test.lines.some((l) => l.who === "agent")) {
+        page.append(el("p", { class: "error small", text: "The test call ended without hearing you. The call shows why. Fix that, then ring again." }));
+      }
       if (passed) page.append(el("p", { class: "saved", text: "✓ It works" }), next());
       else {
         page.append(

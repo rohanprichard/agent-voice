@@ -39,6 +39,7 @@ interface Window {
     voices(): Promise<Voice[]>;
     voicePreview(url: string): Promise<string>;
     setVoice(voice: string): Promise<void>;
+    credits(): Promise<{ left: number; limit: number } | null>;
     speechVoice(): Promise<string>;
     testCall(): Promise<void>;
     finishOnboarding(): Promise<void>;

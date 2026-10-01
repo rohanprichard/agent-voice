@@ -538,3 +538,7 @@ button.hidden {
 .mac-card > .mac-wait:first-child {
   border-top: 0;
 }
+.warn {
+  margin: 0;
+  color: #d97706;
+}

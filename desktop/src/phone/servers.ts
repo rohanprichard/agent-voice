@@ -227,3 +227,20 @@ export async function voicePreview(url: string): Promise<string> {
   if (!response.ok) throw new Error("The sample could not load.");
   return Buffer.from(await response.arrayBuffer()).toString("base64");
 }
+
+// elevenLabsCredits reads how much of the plan's quota is left. A key without
+// the user_read permission cannot see it, and then the answer is null.
+export async function elevenLabsCredits(apiKey: string): Promise<{ left: number; limit: number } | null> {
+  try {
+    const response = await fetch("https://api.elevenlabs.io/v1/user/subscription", {
+      headers: { "xi-api-key": apiKey },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { character_count?: number; character_limit?: number };
+    if (typeof data.character_count !== "number" || typeof data.character_limit !== "number") return null;
+    return { left: Math.max(0, data.character_limit - data.character_count), limit: data.character_limit };
+  } catch {
+    return null;
+  }
+}
