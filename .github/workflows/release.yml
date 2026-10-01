@@ -49,9 +49,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: talktome-app
-          path: |
-            dist/app/*.dmg
-            dist/app/*.zip
+          path: dist/app/*.dmg
 
       - name: Write the Homebrew cask values
         if: github.ref_type == 'tag'
@@ -70,7 +68,5 @@ jobs:
         with:
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
-          files: |
-            dist/app/*.dmg
-            dist/app/*.zip
-            dist/app/latest-mac.yml
+          # Only the disk image. The zip and latest-mac.yml come back with in-app updates.
+          files: dist/app/*.dmg
