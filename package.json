@@ -23,7 +23,7 @@
     "build:ts": "node scripts/build-ts.mjs",
     "test": "node scripts/build-ts.mjs && node --test \"desktop/build/**/*.test.js\"",
     "test:server": "cd server && uv run pytest -q && uvx ruff check src tests",
-    "build:app": "node scripts/make-app-icon.mjs && node scripts/build-ts.mjs && rm -rf server/dist && (cd server && uv build --wheel) && electron-builder --mac",
+    "build:app": "node scripts/make-app-icon.mjs && node scripts/build-ts.mjs && rm -rf server/dist && (cd server && uv build --wheel) && electron-builder --mac --publish never",
     "version:set": "sh scripts/set-version.sh",
     "server:check": "sh scripts/release-server.sh check",
     "server:publish:test": "sh scripts/release-server.sh testpypi",
