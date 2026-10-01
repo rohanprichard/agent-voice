@@ -183,7 +183,7 @@ export async function elevenLabsToken(apiKey: string, kind: "realtime_scribe" | 
   const data = (await response.json().catch(() => ({}))) as { token?: string; detail?: { message?: string } | string };
   if (!response.ok || !data.token) {
     const detail = typeof data.detail === "string" ? data.detail : data.detail?.message;
-    throw new Error(response.status === 401 ? "ElevenLabs refused the key. Check it in talktome." : detail || `ElevenLabs failed (${response.status}).`);
+    throw new Error(response.status === 401 ? "ElevenLabs refused this key. Check that you copied all of it." : detail || `ElevenLabs failed (${response.status}).`);
   }
   return data.token;
 }

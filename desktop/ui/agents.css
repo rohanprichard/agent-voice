@@ -217,3 +217,7 @@ pre {
   border-radius: var(--radius-sm);
   background: var(--muted);
 }
+
+.panel.required {
+  border-color: var(--foreground);
+}

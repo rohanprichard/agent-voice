@@ -6,6 +6,7 @@
 // server over SSH. Speech uses the user's own ElevenLabs key.
 
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, Notification, powerMonitor, safeStorage, screen, Tray } from "electron";
+import fs from "node:fs";
 import path from "node:path";
 
 import { Hub } from "./phone/hub";
@@ -19,6 +20,14 @@ const ui = path.join(__dirname, "..", "ui");
 app.setName("talktome");
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 if (process.env.TALKTOME_DATA_DIR) app.setPath("userData", process.env.TALKTOME_DATA_DIR);
+
+// A packaged app carries the talktome-server wheel, so setting up a machine
+// needs no package index.
+if (app.isPackaged && !process.env.TALKTOME_SERVER_SOURCE) {
+  const dir = path.join(process.resourcesPath, "talktome-server");
+  const wheel = fs.existsSync(dir) ? fs.readdirSync(dir).find((name) => name.endsWith(".whl")) : undefined;
+  if (wheel) process.env.TALKTOME_SERVER_SOURCE = path.join(dir, wheel);
+}
 
 let hub: Hub | null = null;
 let phone: Phone | null = null;
@@ -151,10 +160,11 @@ function updateTray(): void {
   if (!tray) return;
   const state = snapshot();
   const up = state.servers.filter((s) => s.state === "connected").length;
-  const status = state.servers.length === 0 ? "No machines set up" : `${up} of ${state.servers.length} machines connected`;
+  let status = state.servers.length === 0 ? "No machines set up" : `${up} of ${state.servers.length} machines connected`;
+  if (!state.speechKey) status = "Add your ElevenLabs key to make calls";
   const machines = state.agents.map((agent) => ({
     label: `${agent.online ? "●" : "○"} ${agent.name}`,
-    enabled: agent.online && agent.targets.length > 0,
+    enabled: state.speechKey && agent.online && agent.targets.length > 0,
     submenu: agent.targets.length
       ? agent.targets.slice(0, 10).map((target) => ({
           label: target.project,
@@ -195,7 +205,14 @@ handle("speech-token", (callId: string, kind: "realtime_scribe" | "tts_websocket
   return servers.elevenLabsToken(key, kind);
 });
 handle("hang-up", (callId: string) => phone?.hangUp(callId));
-handle("call-agent", (agentId: string, targetId: string, mode: "join" | "continue" | "new") => phone?.callAgent(agentId, targetId, mode));
+handle("call-agent", (agentId: string, targetId: string, mode: "join" | "continue" | "new") => {
+  // Calls are voice only.
+  if (!elevenLabsKey()) {
+    openAgents();
+    throw new Error("Add your ElevenLabs key to make calls.");
+  }
+  return phone?.callAgent(agentId, targetId, mode);
+});
 handle("dismiss-notice", (noticeId: string) => phone?.dismissNotice(noticeId));
 handle("open-agents", () => openAgents());
 handle("pointer", (inside: boolean) => pill?.setIgnoreMouseEvents(!inside, { forward: true }));
@@ -230,9 +247,16 @@ handle("remove-server", (host: string) => {
   broadcast();
 });
 handle("reconnect", () => hub?.retry());
-handle("set-speech-key", (key: string) => {
+// set-speech-key checks a key with ElevenLabs before it keeps it, and returns
+// what went wrong, or "".
+handle("set-speech-key", async (key: string) => {
   key = key.trim();
   if (key) {
+    try {
+      await servers.elevenLabsToken(key, "realtime_scribe");
+    } catch (error) {
+      return (error as Error).message;
+    }
     const sealed = safeStorage.isEncryptionAvailable();
     settings = { ...settings, elevenlabs: sealed ? safeStorage.encryptString(key).toString("base64") : key, sealed };
   } else {
@@ -240,6 +264,7 @@ handle("set-speech-key", (key: string) => {
   }
   servers.saveSettings(settingsFile(), settings);
   broadcast();
+  return "";
 });
 
 if (!app.requestSingleInstanceLock()) {
@@ -253,7 +278,7 @@ if (!app.requestSingleInstanceLock()) {
     settings = servers.loadSettings(settingsFile());
     startHub();
     powerMonitor.on("resume", () => hub?.retry());
-    if (!servers.localServerBin() && settings.servers.length === 0) openAgents();
+    if (!elevenLabsKey() || (!servers.localServerBin() && settings.servers.length === 0)) openAgents();
     updateTray();
   });
   app.on("before-quit", () => hub?.stop());

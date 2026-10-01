@@ -1,6 +1,6 @@
 // The call surface: a capsule that grows out from under the menu bar, rings,
 // becomes the call pill when answered, and goes back when the call ends. The
-// transcript opens below it. With no speech, the user types in the transcript.
+// transcript opens below it. Calls are voice only, so they need an ElevenLabs key.
 
 (() => {
   followTheme();
@@ -11,7 +11,6 @@
   const list = $("t-list");
   const empty = $("t-empty");
   const choices = $("choices");
-  const say = $<HTMLInputElement>("say");
   const status = $("call-status");
   const mute = $("mute");
   const interrupt = $<HTMLButtonElement>("interrupt");
@@ -20,6 +19,7 @@
   type Shape = "hidden" | "attached" | "settled";
   let shape: Shape = "hidden";
   let current: Call | null = null;
+  let speechKey = false;
   let voice: VoiceCall | null = null;
   let speechFailed = false;
   let spokenLines = 0;
@@ -64,6 +64,7 @@
   }
 
   function render(state: Snapshot): void {
+    speechKey = state.speechKey;
     const call = state.calls.find((c) => c.state === "ringing") ?? state.calls[state.calls.length - 1] ?? null;
     if (!call) {
       if (current) withdraw();
@@ -89,7 +90,12 @@
     const settleWait = shape === "settled" ? 0 : 520;
     if (call.state === "ringing") {
       $("ring-name").textContent = nameOf(call);
-      $("ring-hint").textContent = call.reason ? `${call.agent.name} wants to talk` : "wants to talk";
+      $("ring-hint").textContent = !speechKey
+        ? "Needs an ElevenLabs key"
+        : call.reason
+          ? `${call.agent.name} wants to talk`
+          : "wants to talk";
+      $("accept").title = speechKey ? "Answer" : "Add your ElevenLabs key";
       later(settleWait, () => ringing.classList.add("shown"));
       pill.classList.remove("shown");
     } else {
@@ -126,16 +132,15 @@
     voice = new VoiceCall(
       call.id,
       (text) => void window.talktome.say(call.id, text),
-      (_text, failed) => {
+      (text, failed) => {
         if (!failed) return;
-        // Without speech the call goes on in text: the transcript opens with the cursor in its field.
+        // A call is voice only. The transcript says what stopped, and the user can end the call.
         speechFailed = true;
         voice = null;
         openTranscript(true);
         const note = $("t-note");
-        note.textContent = _text.replace(/^Speech unavailable: /, "");
+        note.textContent = text.replace(/^Speech unavailable: /, "Speech stopped: ");
         note.hidden = false;
-        say.focus();
       },
     );
     void voice.start();
@@ -188,7 +193,7 @@
     else if (call.state === "ended") text = call.ended ?? "Call ended";
     else if (voice?.playing()) [text, kind] = ["Agent speaking", "agent"];
     else if (call.waiting) [text, kind] = ["Thinking…", "waiting"];
-    else if (speechFailed) [text, kind] = ["Type to talk", "agent"];
+    else if (speechFailed) [text, kind] = ["Speech stopped", "agent"];
     else if (voice?.isMuted()) [text, kind] = ["Microphone off", "agent"];
     else if (voice?.partial) text = "Hearing you";
     if (status.textContent !== text) status.textContent = text;
@@ -202,7 +207,12 @@
   }
   setInterval(renderStatus, 150);
 
-  $("accept").addEventListener("click", () => current && void window.talktome.answer(current.id));
+  // With no key, Answer opens the window where the key goes. The ring keeps ringing.
+  $("accept").addEventListener("click", () => {
+    if (!current) return;
+    if (speechKey) void window.talktome.answer(current.id);
+    else void window.talktome.openAgents();
+  });
   $("decline").addEventListener("click", () => current && void window.talktome.decline(current.id));
   $("end").addEventListener("click", () => current && void window.talktome.hangUp(current.id));
   interrupt.addEventListener("click", () => voice?.stopSpeaking());
@@ -213,12 +223,6 @@
   });
   toggle.addEventListener("click", () => openTranscript(surface.dataset.transcript !== "open"));
   $("transcript-close").addEventListener("click", () => openTranscript(false));
-  say.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter" || !say.value.trim() || !current) return;
-    const text = say.value;
-    say.value = "";
-    void window.talktome.say(current.id, text);
-  });
 
   // The window lets clicks through, except over the capsule and the transcript.
   let inside = false;

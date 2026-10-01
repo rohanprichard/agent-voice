@@ -7,6 +7,8 @@
   const hostNames: Record<string, string> = { claude: "Claude Code", codex: "Codex", hermes: "Hermes", openclaw: "OpenClaw" };
   let last: Snapshot | null = null;
   let sshHosts: string[] = [];
+  let keyError = "";
+  let speechKey = false;
 
   // The setup checklist that is open, if any.
   type Setup = { place: string; found: Inspection | null; busy: string; error: string };
@@ -14,6 +16,7 @@
 
   function render(state: Snapshot, force = false): void {
     last = state;
+    speechKey = state.speechKey;
     if (!force && document.activeElement?.tagName === "INPUT") return; // do not wipe a form while the user types
     root.replaceChildren(...localView(state));
   }
@@ -29,9 +32,11 @@
   }
 
   function localView(state: Snapshot): HTMLElement[] {
-    const parts = [header(state), machines(state)];
+    // Calls are voice only, so the key comes first until it is saved.
+    const parts = state.speechKey ? [header(state), machines(state)] : [header(state), speech(state), machines(state)];
     if (setup) parts.push(setupPanel(state, setup));
-    parts.push(projects(state), speech(state));
+    parts.push(projects(state));
+    if (state.speechKey) parts.push(speech(state));
     if (state.notices.length) parts.push(notices(state));
     return parts;
   }
@@ -188,22 +193,30 @@
   }
 
   function speech(state: Snapshot): HTMLElement {
-    const panel = el("section", { class: "panel" }, el("h2", { text: "Speech" }));
+    const panel = el("section", { class: `panel${state.speechKey ? "" : " required"}` }, el("h2", { text: "Speech" }));
     if (state.speechKey) {
-      panel.append(el("p", { class: "muted", text: "Your ElevenLabs key is saved in the keychain. You talk in calls." }));
+      panel.append(el("p", { class: "muted", text: "Your ElevenLabs key is saved in the keychain." }));
       panel.append(button("Remove the key", "ghost-button", () => void window.talktome.setSpeechKey("")));
       return panel;
     }
-    panel.append(el("p", { class: "muted", text: "talktome uses your own ElevenLabs account for speech. Without a key, you type in calls." }));
-    const key = el("input", { type: "password", placeholder: "ElevenLabs API key", "aria-label": "ElevenLabs API key" });
     panel.append(
-      key,
-      button("Save", "secondary-button", async () => {
-        await window.talktome.setSpeechKey(key.value);
-        key.blur();
-        rerender();
-      }),
+      el("p", { class: "muted", text: "Calls are voice only. talktome uses your own ElevenLabs account to hear you and to speak the agent's replies. Add a key to make and answer calls." }),
     );
+    const key = el("input", { type: "password", placeholder: "ElevenLabs API key", "aria-label": "ElevenLabs API key" });
+    const save = button("Save", "primary-button", async () => {
+      if (!key.value.trim()) return;
+      save.disabled = true;
+      save.textContent = "Checking…";
+      keyError = await window.talktome.setSpeechKey(key.value);
+      key.blur();
+      rerender();
+    });
+    key.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") save.click();
+    });
+    panel.append(el("div", { class: "add-server" }, key, save));
+    if (keyError) panel.append(el("p", { class: "error small", text: keyError }));
+    panel.append(el("p", { class: "muted small", text: "Make a key at elevenlabs.io, in Developers > API keys. It needs speech to text and text to speech." }));
     return panel;
   }
 
@@ -238,7 +251,10 @@
     const actions = el("div", { class: "target-actions" });
     if (target.joinable) actions.append(button("Join", "primary-button", call("join")));
     actions.append(button("Continue", "secondary-button", call("continue")), button("New", "ghost-button", call("new")));
-    for (const b of actions.querySelectorAll("button")) b.disabled = !agent.online;
+    for (const b of actions.querySelectorAll("button")) {
+      b.disabled = !agent.online || !speechKey;
+      if (!speechKey) b.title = "Add your ElevenLabs key to make calls";
+    }
     return el(
       "div",
       { class: "target" },

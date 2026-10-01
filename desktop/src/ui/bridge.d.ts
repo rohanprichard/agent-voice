@@ -32,6 +32,6 @@ interface Window {
     addServer(host: string): Promise<void>;
     removeServer(host: string): Promise<void>;
     reconnect(): Promise<void>;
-    setSpeechKey(key: string): Promise<void>;
+    setSpeechKey(key: string): Promise<string>;
   };
 }

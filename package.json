@@ -23,7 +23,7 @@
     "build:ts": "node scripts/build-ts.mjs",
     "test": "node scripts/build-ts.mjs && node --test \"desktop/build/**/*.test.js\"",
     "test:server": "cd server && uv run pytest -q && uvx ruff check src tests",
-    "build:app": "node scripts/make-app-icon.mjs && node scripts/build-ts.mjs && electron-builder --mac"
+    "build:app": "node scripts/make-app-icon.mjs && node scripts/build-ts.mjs && rm -rf server/dist && (cd server && uv build --wheel) && electron-builder --mac"
   },
   "devDependencies": {
     "@types/node": "^22.20.4",
@@ -69,7 +69,16 @@
         "LSUIElement": true,
         "NSMicrophoneUsageDescription": "talktome listens to you during a call with your agent."
       }
-    }
+    },
+    "extraResources": [
+      {
+        "from": "server/dist",
+        "to": "talktome-server",
+        "filter": [
+          "*.whl"
+        ]
+      }
+    ]
   },
   "allowScripts": {
     "electron@44.4.3": true
