@@ -54,6 +54,7 @@ type AppState = Snapshot & {
   servers: ReturnType<Hub["servers"]>;
   localInstalled: boolean;
   speechKey: boolean;
+  keyEnd: string; // the last characters of the key, so the user can tell which key is saved
   voice: string;
   onboarded: boolean;
 };
@@ -65,6 +66,7 @@ function snapshot(): AppState {
     servers: hub?.servers() ?? [],
     localInstalled: servers.localServerBin() !== null,
     speechKey: elevenLabsKey() !== "",
+    keyEnd: elevenLabsKey().slice(-4),
     voice: settings.voice ?? servers.DEFAULT_VOICE,
     onboarded: Boolean(settings.onboarded),
   };

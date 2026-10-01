@@ -86,7 +86,10 @@
       spokenLines = 0;
       listKey = "";
       surface.dataset.transcript = "closed";
-      if (shape === "hidden") appear();
+      // A call that arrives while the last one is still going back up
+      // cancels that withdraw, so the capsule never hides behind the controls.
+      clearTimers();
+      if (shape !== "settled") appear();
     }
     surface.dataset.state = call.state;
 

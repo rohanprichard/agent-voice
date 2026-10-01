@@ -218,7 +218,7 @@
   function speechBody(state: Snapshot): HTMLElement[] {
     if (state.speechKey) {
       const parts: HTMLElement[] = [];
-      parts.push(el("p", { class: keySaved ? "saved" : "muted small", text: keySaved ? "✓ Key saved" : "Key saved in your keychain" }));
+      parts.push(el("p", { class: keySaved ? "saved" : "muted small", text: `${keySaved ? "✓ " : ""}Key …${state.keyEnd} saved in your keychain` }));
       const quota = creditsLine();
       if (quota) parts.push(quota);
       parts.push(voicePicker(state));
@@ -226,7 +226,7 @@
         el(
           "div",
           { class: "target-actions" },
-          button("Remove the key", "ghost-button", () => {
+          button("Change the key", "ghost-button", () => {
             keySaved = false;
             voices = null;
             void window.talktome.setSpeechKey("");

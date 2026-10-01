@@ -5,6 +5,7 @@ type Inspection = import("../phone/servers").Inspection;
 type Voice = import("../phone/servers").Voice;
 type Snapshot = import("../phone/phone").Snapshot & {
   servers: ServerState[];
+  keyEnd: string;
   voice: string;
   onboarded: boolean;
   localInstalled: boolean;
