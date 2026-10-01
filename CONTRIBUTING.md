@@ -45,7 +45,7 @@ The version is in three files: `package.json`, `server/pyproject.toml`, and `ser
 4. Commit the change, then push a tag such as `v0.2.0`.
 
 The release workflow stops if the tag does not match the three files.
-It builds the disk image and the zip, then attaches them to a GitHub release.
+It builds the disk image, then attaches it to a GitHub release.
 The job summary shows the `sha256` value for the Homebrew cask.
 
 ### talktome-server on PyPI
