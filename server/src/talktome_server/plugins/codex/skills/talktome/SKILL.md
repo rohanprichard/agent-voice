@@ -19,7 +19,8 @@ The `talktome` MCP server rings the user's computer through the talktome app. Th
 - The user hears your words as speech. Use one or two short sentences.
 - Do not read out markdown, code, file paths, or URLs.
 - Ask one question at a time.
-- If the user asks for work that takes more than a minute, say what you will do and end the call. Do the work. Then call again or use `notify_user` with the result.
+- When the user asks you to do some work and then call them, do the work first. Call once, with the result. Do not call to say that you are starting.
+- If the user asks during a call for work that takes more than a minute, say what you will do and end the call. Do the work. Then call again, or use `notify_user`, with the result.
 
 ## When the user calls in
 
