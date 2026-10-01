@@ -1,0 +1,11 @@
+{
+  "name": "talktome",
+  "version": "0.2.0",
+  "description": "Voice calls with Claude Code through talktome. Claude can ring the user, and the user can call into an open session.",
+  "author": {
+    "name": "Rohan Richard"
+  },
+  "skills": [
+    "./"
+  ]
+}

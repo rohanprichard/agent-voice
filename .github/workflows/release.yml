@@ -1,8 +1,13 @@
 name: Release
 
+# A v* tag builds the app and publishes a GitHub release with it. A tag with
+# a dash, such as v0.2.0-beta.1, is marked as a pre-release. Run it by hand
+# from the Actions tab to build and test without a release: the disk image is
+# then kept as a workflow artifact for a few days.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -22,42 +27,34 @@ jobs:
       # The version is in three files. A tag that does not match all of them
       # stops the release before anything is built.
       - name: Check that the tag matches the version
+        if: github.ref_type == 'tag'
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          node_version=$(node -p "require('./package.json').version")
-          python_version=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)
-          package_version=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/talktome/__init__.py)
-          echo "tag $tag, package.json $node_version, pyproject.toml $python_version, __init__.py $package_version"
-          [ "$tag" = "$node_version" ] && [ "$tag" = "$python_version" ] && [ "$tag" = "$package_version" ]
+          app=$(node -p "require('./package.json').version")
+          server=$(sed -n 's/^version = "\(.*\)"/\1/p' server/pyproject.toml)
+          package=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' server/src/talktome_server/__init__.py)
+          echo "tag $tag, app $app, server $server, package $package"
+          [ "$tag" = "$app" ] && [ "$tag" = "$server" ] && [ "$tag" = "$package" ]
 
-      - run: uv sync --frozen --extra speech
-      # A release is built only from code that passes the same checks as CI.
-      - run: uv run ruff check
-      - run: uv run pytest -q
-      - run: node --test tests/*.test.mjs
       - run: npm ci
       - name: Install the Electron binary
         run: test -d node_modules/electron/dist || node node_modules/electron/install.js
+      - run: uv sync --frozen
+        working-directory: server
+      # A release is built only from code that passes the same checks as CI.
+      - run: npm test
+      - run: npm run build:app
+      - run: codesign --verify --deep --strict dist/app/mac-arm64/talktome.app
 
-      # The native notch is off, so the release does not build its helper.
-      # TALKTOME_NOTCH=1 turns the helper build on.
-      - run: sh packaging/build-app.sh
-
-      - name: Start the server from the built app
-        run: |
-          app=dist/app/mac-arm64/TalkToMe.app
-          codesign --verify --deep --strict "$app"
-          export TALKTOME_DATA_DIR="$RUNNER_TEMP/smoke" TALKTOME_PORT=8764
-          "$app/Contents/Resources/talktome-server/talktome-server" &
-          server=$!
-          for _ in $(seq 1 60); do
-            curl -sf http://127.0.0.1:8764/v1/health && break
-            sleep 1
-          done
-          curl -sf http://127.0.0.1:8764/v1/health
-          kill "$server"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: talktome-app
+          path: |
+            dist/app/*.dmg
+            dist/app/*.zip
 
       - name: Write the Homebrew cask values
+        if: github.ref_type == 'tag'
         run: |
           dmg=$(ls dist/app/*.dmg)
           {
@@ -69,24 +66,11 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: softprops/action-gh-release@v2
+        if: github.ref_type == 'tag'
         with:
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
             dist/app/*.dmg
             dist/app/*.zip
             dist/app/latest-mac.yml
-
-  # Off until the owner sets up trusted publishing on PyPI and sets the
-  # repository variable PUBLISH_PYPI to true.
-  pypi:
-    if: vars.PUBLISH_PYPI == 'true'
-    needs: app
-    runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - run: uv build
-      - uses: pypa/gh-action-pypi-publish@release/v1

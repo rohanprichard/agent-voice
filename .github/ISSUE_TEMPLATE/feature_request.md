@@ -6,7 +6,7 @@ labels: enhancement
 
 **Problem**
 
-What do you want to do that TalkToMe does not let you do now?
+What do you want to do that talktome does not let you do now?
 
 **Proposal**
 

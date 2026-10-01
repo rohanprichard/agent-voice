@@ -16,7 +16,7 @@ labels: bug
 **Setup**
 
 - macOS version:
-- TalkToMe version or commit:
+- talktome version or commit:
 - Agent (Codex, Claude Code, Hermes, OpenClaw, other) and version:
 - Speech recognition and voice provider:
 

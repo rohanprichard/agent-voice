@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "talktome": {
+      "command": "{{talktome-server}}",
+      "args": [
+        "mcp"
+      ],
+      "tool_timeout_sec": 300,
+      "default_tools_approval_mode": "approve"
+    }
+  }
+}

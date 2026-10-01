@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "talktome": {
+      "command": "{{talktome-server}}",
+      "args": ["mcp"]
+    }
+  }
+}

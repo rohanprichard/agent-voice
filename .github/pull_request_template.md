@@ -4,7 +4,6 @@
 
 **Checks**
 
-- [ ] `uv run pytest -q`
-- [ ] `uv run ruff check`
-- [ ] `node --test tests/*.test.mjs`
+- [ ] `npm test`
+- [ ] `npm run test:server`
 - [ ] Docs and CHANGELOG.md updated, if users see the change

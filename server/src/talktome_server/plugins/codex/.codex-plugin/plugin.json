@@ -1,0 +1,86 @@
+{
+  "name": "talktome",
+  "version": "0.2.0",
+  "description": "Voice calls with Codex through talktome. Codex can ring the user, and the user can call into an open session.",
+  "author": {
+    "name": "Rohan Richard"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "hooks": {
+    "hooks": {
+      "SessionStart": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "\"{{talktome-server}}\" hook codex",
+              "timeout": 10
+            }
+          ]
+        }
+      ],
+      "UserPromptSubmit": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "\"{{talktome-server}}\" hook codex",
+              "timeout": 10
+            }
+          ]
+        }
+      ],
+      "PostToolUse": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "\"{{talktome-server}}\" hook codex",
+              "timeout": 10
+            }
+          ]
+        }
+      ],
+      "Stop": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "\"{{talktome-server}}\" hook codex",
+              "timeout": 600
+            }
+          ]
+        }
+      ],
+      "SessionEnd": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "\"{{talktome-server}}\" hook codex",
+              "timeout": 3
+            }
+          ]
+        }
+      ],
+      "PermissionRequest": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "\"{{talktome-server}}\" hook codex",
+              "timeout": 120
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "interface": {
+    "displayName": "talktome",
+    "shortDescription": "Voice calls with Codex",
+    "developerName": "Rohan Richard",
+    "category": "Productivity"
+  }
+}

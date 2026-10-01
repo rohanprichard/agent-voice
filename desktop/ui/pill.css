@@ -1,0 +1,540 @@
+/* The call surface. Sizes follow the launch films, which follow the earlier
+   app's call.css: a 320 px ring, a 424 px pill, a 360 px transcript. */
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  font-family: var(--font-sans);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+#surface {
+  position: relative;
+  height: 100%;
+  --ring-width: 320px;
+  --pill-width: 424px;
+  --top: 10px;
+  --shell-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ------------------------------------------------------------ the capsule */
+
+/* One shape carries every state. It starts as a black nub under the menu
+   bar, deepens and widens while it is still attached, then lets go and
+   settles below the menu bar in the card colour. JS sets data-shape. */
+#capsule {
+  position: absolute;
+  left: 50%;
+  top: -24px;
+  width: 140px;
+  height: 20px;
+  border-radius: 10px;
+  background: #000;
+  border: 1px solid transparent;
+  transform: translateX(-50%);
+  filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.18));
+  opacity: 0;
+  transition:
+    opacity 0.15s ease 0.25s,
+    width 0.55s var(--shell-ease),
+    height 0.34s cubic-bezier(0.33, 1, 0.68, 1),
+    top 0.42s cubic-bezier(0.65, 0, 0.35, 1),
+    border-radius 0.34s ease,
+    background-color 0.36s ease,
+    border-color 0.36s ease;
+}
+
+#surface[data-shape="attached"] #capsule,
+#surface[data-shape="settled"] #capsule {
+  opacity: 1;
+  transition-delay: 0s;
+}
+
+#surface[data-shape="attached"] #capsule {
+  top: -10px;
+  height: 66px;
+  border-radius: 28px;
+}
+
+#surface[data-shape="settled"] #capsule {
+  top: var(--top);
+  height: 56px;
+  border-radius: 28px;
+  background: var(--card);
+  border-color: var(--border);
+}
+
+#surface[data-shape="attached"] #capsule,
+#surface[data-shape="settled"] #capsule {
+  width: var(--width, var(--ring-width));
+}
+
+#surface[data-state="ringing"] {
+  --width: var(--ring-width);
+}
+
+#surface[data-state="calling"],
+#surface[data-state="live"],
+#surface[data-state="ended"] {
+  --width: var(--pill-width);
+}
+
+/* ------------------------------------------------------------ layers */
+
+.layer {
+  position: absolute;
+  left: 50%;
+  top: var(--top);
+  height: 56px;
+  display: flex;
+  align-items: center;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.layer > * {
+  opacity: 0;
+  transform: translateY(3px);
+  transition:
+    opacity 0.2s ease,
+    transform 0.3s ease;
+}
+
+.layer.shown {
+  pointer-events: auto;
+}
+
+.layer.shown > * {
+  opacity: 1;
+  transform: none;
+}
+
+.layer.shown > :nth-child(2) {
+  transition-delay: 0.04s;
+}
+.layer.shown > :nth-child(3) {
+  transition-delay: 0.08s;
+}
+.layer.shown > :nth-child(4) {
+  transition-delay: 0.11s;
+}
+.layer.shown > :nth-child(5) {
+  transition-delay: 0.14s;
+}
+.layer.shown > :nth-child(6) {
+  transition-delay: 0.17s;
+}
+.layer.shown > :nth-child(7) {
+  transition-delay: 0.2s;
+}
+
+.name {
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hint,
+.status {
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ------------------------------------------------------------ ringing */
+
+#ringing {
+  width: var(--ring-width);
+  gap: 12px;
+  padding: 0 6px 0 10px;
+  box-sizing: border-box;
+}
+
+.bell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.bell-pulse {
+  position: absolute;
+  inset: -1px;
+  border-radius: 6px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--foreground) 10%, transparent);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.bell svg,
+.pbtn svg,
+#transcript header svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.bell svg {
+  width: 18px;
+  height: 18px;
+}
+
+.ring-text {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.hint {
+  font-size: 12px;
+}
+
+.round {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--on-semantic);
+  transition: transform 0.08s ease, background-color 0.15s ease;
+}
+
+.round:active {
+  transform: scale(0.94);
+}
+
+.round svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+
+#decline {
+  background: var(--destructive);
+}
+#decline:hover {
+  background: var(--destructive-hover);
+}
+#accept {
+  background: var(--answer);
+}
+#accept:hover {
+  background: var(--answer-hover);
+}
+
+/* ------------------------------------------------------------ the pill */
+
+#pill {
+  width: var(--pill-width);
+  gap: 2px;
+  padding: 0 6px;
+  box-sizing: border-box;
+}
+
+.pbtn {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  color: var(--foreground);
+}
+
+.pbtn .icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  transition: background-color 0.15s ease;
+}
+
+.pbtn:hover .icon,
+.pbtn[aria-pressed="true"] .icon,
+.pbtn[aria-expanded="true"] .icon {
+  background: var(--muted);
+}
+
+.pbtn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.pbtn:disabled {
+  cursor: default;
+}
+
+/* Stop matters only while the agent speaks. */
+.layer.shown > #interrupt:disabled {
+  opacity: 0.4;
+}
+#interrupt:disabled .icon {
+  background: none;
+}
+
+#end .icon {
+  background: var(--destructive);
+  border-radius: 50%;
+  color: var(--on-semantic);
+}
+#end:hover .icon {
+  background: var(--destructive-hover);
+}
+#end svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  stroke: none;
+}
+
+#identity {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 190px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 4px;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 14px;
+  font-size: 11px;
+}
+
+.status::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--foreground);
+}
+
+.status.agent::before,
+.status.waiting::before {
+  background: var(--muted-foreground);
+}
+
+.status.waiting::before {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+#threads {
+  flex: 0 0 96px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+#threads canvas {
+  display: block;
+  width: 100%;
+  height: 32px;
+}
+
+.divider {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--border);
+}
+
+/* ------------------------------------------------------------ transcript */
+
+#transcript {
+  position: absolute;
+  top: calc(var(--top) + 64px);
+  left: calc(50% - var(--pill-width) / 2 + 14px);
+  width: 360px;
+  max-height: 380px;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  border-radius: 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-float);
+  transform-origin: top right;
+  opacity: 0;
+  transform: translateY(-8px) scale(0.96);
+  pointer-events: none;
+  transition:
+    opacity 0.2s ease,
+    transform 0.22s cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+
+#surface[data-transcript="open"]:is([data-state="live"], [data-state="calling"], [data-state="ended"]) #transcript {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+#transcript header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 6px 6px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.t-title {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+#transcript-close {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--muted-foreground);
+}
+#transcript-close:hover {
+  background: var(--muted);
+}
+#transcript-close svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.5;
+}
+
+#t-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  list-style: none;
+  margin: 0;
+  padding: 12px 14px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+#t-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: arrive 0.18s ease-out;
+}
+
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+#t-list .who {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+
+#t-list .user .who {
+  color: var(--foreground);
+}
+
+#t-list .said {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+#t-list .partial,
+#t-list .progress .said {
+  opacity: 0.6;
+}
+
+#t-empty {
+  margin: 0;
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+/* The list scrolls; the choices and the note keep their room below it. */
+#choices {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 14px 14px;
+}
+
+#choices:empty {
+  display: none;
+}
+
+#choices button {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--input);
+  border-radius: 14px;
+  font-size: 12px;
+}
+#choices button:hover {
+  background: var(--muted);
+}
+
+
+/* The hidden attribute does not hide an SVG element by itself. */
+svg[hidden] {
+  display: none;
+}
+
+#t-note {
+  flex: none;
+  margin: 10px 14px 12px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+#transcript header {
+  flex: none;
+}
