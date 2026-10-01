@@ -28,7 +28,7 @@ When the agent needs permission for a tool during a call, it asks you in the cal
 - One agent host: Claude Code, Codex, Hermes Agent, or OpenClaw.
 - [uv](https://docs.astral.sh/uv/) on each machine where agents run. talktome can install it for you.
 - For servers: an SSH login with a key. talktome never asks for a password.
-- For speech: an [ElevenLabs](https://elevenlabs.io) API key. Without a key, you type in calls.
+- An [ElevenLabs](https://elevenlabs.io) API key, on an account with credits. Calls are voice only.
 
 ## Install
 
@@ -56,15 +56,13 @@ npm start
 
 ## Set up
 
-talktome opens its window the first time. The window has a checklist for each machine.
+The first time talktome opens, a short setup walks you through it:
 
-### This Mac
+1. **Your voice.** Paste your ElevenLabs API key, and pick a voice. talktome checks the key with ElevenLabs before it saves it.
+2. **This Mac.** One button each installs uv if it is missing, installs `talktome-server` with `uv tool install`, and adds the talktome plugin to each agent it finds: Claude Code, Codex, Hermes, and OpenClaw.
+3. **A test call.** talktome rings you. Answer, say anything, and hear it back.
 
-Select **Set up…** next to **This Mac**. The checklist does these steps, with one button each:
-
-1. Install uv, if it is missing.
-2. Install `talktome-server` with `uv tool install`.
-3. Add the talktome plugin to each agent that it finds: Claude Code, Codex, Hermes, and OpenClaw.
+Later, open the window from the menu bar to add servers, change the voice or the key, and see your projects.
 
 ### A server
 
@@ -84,8 +82,8 @@ If SSH does not know the server, run `ssh user@host` once in Terminal to accept 
 
 ### Speech
 
-Paste your ElevenLabs API key in the **Speech** section. talktome keeps it in the macOS keychain, and makes a single-use token for each call.
-Your voice goes from the Mac to ElevenLabs, and never to your servers.
+Calls are voice only, and speech runs on your own ElevenLabs account. talktome keeps the key in the macOS keychain, and makes a single-use token for each call.
+Your voice goes from the Mac to ElevenLabs, and never to your servers. Every key on an ElevenLabs account shares that account's credits.
 
 ## How it connects
 
