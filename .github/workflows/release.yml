@@ -1,8 +1,13 @@
 name: Release
 
+# A v* tag builds the app and publishes a GitHub release with it. A tag with
+# a dash, such as v0.2.0-beta.1, is marked as a pre-release. Run it by hand
+# from the Actions tab to build and test without a release: the disk image is
+# then kept as a workflow artifact for a few days.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -22,6 +27,7 @@ jobs:
       # The version is in three files. A tag that does not match all of them
       # stops the release before anything is built.
       - name: Check that the tag matches the version
+        if: github.ref_type == 'tag'
         run: |
           tag="${GITHUB_REF_NAME#v}"
           app=$(node -p "require('./package.json').version")
@@ -40,7 +46,15 @@ jobs:
       - run: npm run build:app
       - run: codesign --verify --deep --strict dist/app/mac-arm64/talktome.app
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: talktome-app
+          path: |
+            dist/app/*.dmg
+            dist/app/*.zip
+
       - name: Write the Homebrew cask values
+        if: github.ref_type == 'tag'
         run: |
           dmg=$(ls dist/app/*.dmg)
           {
@@ -52,8 +66,10 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: softprops/action-gh-release@v2
+        if: github.ref_type == 'tag'
         with:
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
             dist/app/*.dmg
             dist/app/*.zip

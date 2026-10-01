@@ -327,6 +327,8 @@ pre {
   align-items: center;
   gap: 14px;
   text-align: center;
+}
+.onboard.enter {
   animation: rise 0.35s ease-out;
 }
 @keyframes rise {

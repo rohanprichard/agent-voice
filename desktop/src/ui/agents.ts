@@ -28,11 +28,27 @@
   type Setup = { place: string; found: Inspection | null; busy: string; error: string };
   let setup: Setup | null = null;
 
+  let shown = ""; // what the last render showed, to skip renders that change nothing
+  let shownStage = -1;
+
+  // shows is the part of the state this window draws. Calls matter only to
+  // the setup's test call; the rest of the window does not show them.
+  function shows(state: Snapshot): string {
+    const { calls, connected, ...rest } = state;
+    const testCall = !state.onboarded && stage === 3 ? calls.filter((c) => c.reason === "talktome test call") : [];
+    return JSON.stringify([rest, connected, testCall]);
+  }
+
   function render(state: Snapshot, force = false): void {
     last = state;
     speechKey = state.speechKey;
     if (!force && document.activeElement?.tagName === "INPUT") return; // do not wipe a form while the user types
+    const now = shows(state);
+    if (!force && now === shown) return;
+    shown = now;
+    const scroll = document.scrollingElement?.scrollTop ?? 0;
     root.replaceChildren(...(state.onboarded ? localView(state) : onboarding(state)));
+    if (document.scrollingElement) document.scrollingElement.scrollTop = scroll;
     watchCodexTrust(state);
   }
 
@@ -335,7 +351,9 @@
     const local = state.servers.find((s) => s.id === "local");
     const dots = el("ol", { class: "dots", "aria-label": `Step ${stage + 1} of ${steps.length}` });
     steps.forEach((name, i) => dots.append(el("li", { class: i === stage ? "now" : i < stage ? "done" : "", title: name })));
-    const page = el("section", { class: "onboard" });
+    // The page rises in only when the step changes, not on every update.
+    const page = el("section", { class: `onboard${stage !== shownStage ? " enter" : ""}` });
+    shownStage = stage;
     const next = (label = "Continue", enabled = true) => {
       const b = button(label, "primary-button wide", () => {
         stage += 1;
