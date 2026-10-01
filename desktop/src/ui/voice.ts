@@ -12,6 +12,8 @@ class VoiceCall {
   private muted = false;
   private speaking = false;
   private pendingSpeech: Promise<void> = Promise.resolve();
+  private listening = true; // false once the call ends and only the last replies play
+  private reconnects = 0;
   private skipTo = 0; // replies queued before this count are not spoken
   private queued = 0;
   // What the pill draws: the microphone level, and the words heard so far.
@@ -33,28 +35,8 @@ class VoiceCall {
       if (this.stopped) return;
       this.context = new AudioContext({ sampleRate: 48000 });
       await this.context.resume();
-      const token = await window.talktome.speechToken(this.callId, "realtime_scribe");
+      await this.openInput();
       if (this.stopped) return;
-      const query = new URLSearchParams({
-        model_id: "scribe_v2_realtime",
-        audio_format: `pcm_${this.context.sampleRate}`,
-        commit_strategy: "vad",
-        vad_silence_threshold_secs: "0.8",
-        token,
-      });
-      const socket = new WebSocket(`wss://api.elevenlabs.io/v1/speech-to-text/realtime?${query}`);
-      this.input = socket;
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error("Speech input took too long to connect.")), 10000);
-        socket.addEventListener("open", () => { clearTimeout(timer); resolve(); }, { once: true });
-        socket.addEventListener("error", () => { clearTimeout(timer); reject(new Error("Speech input could not connect.")); }, { once: true });
-        socket.addEventListener("close", () => { clearTimeout(timer); reject(new Error("Speech input closed.")); }, { once: true });
-      });
-      if (this.stopped) return;
-      socket.addEventListener("message", (event) => this.receive(String(event.data)));
-      socket.addEventListener("close", () => {
-        if (!this.stopped) this.fail("Speech input closed.");
-      });
       this.source = this.context.createMediaStreamSource(this.stream);
       this.processor = this.context.createScriptProcessor(4096, 1, 1);
       this.sink = this.context.createGain();
@@ -64,10 +46,14 @@ class VoiceCall {
         let sum = 0;
         for (let index = 0; index < samples.length; index++) sum += samples[index] * samples[index];
         this.level = this.muted ? 0 : Math.sqrt(sum / samples.length);
-        if (this.stopped || this.muted || this.speaking || socket.readyState !== WebSocket.OPEN) return;
+        const socket = this.input;
+        if (this.stopped || !socket || socket.readyState !== WebSocket.OPEN) return;
+        // While muted or while the agent speaks, send silence: the user is not
+        // heard, and ElevenLabs keeps the session, which it closes when no audio comes.
+        const heard = this.muted || this.speaking ? new Float32Array(samples.length) : samples;
         socket.send(JSON.stringify({
           message_type: "input_audio_chunk",
-          audio_base_64: VoiceCall.pcmBase64(event.inputBuffer.getChannelData(0)),
+          audio_base_64: VoiceCall.pcmBase64(heard),
           sample_rate: this.context?.sampleRate,
         }));
       };
@@ -76,6 +62,46 @@ class VoiceCall {
     } catch (error) {
       if (!this.stopped) this.fail(error instanceof Error ? error.message : "Speech input failed.");
     }
+  }
+
+  // openInput connects speech input with a new single-use token.
+  private async openInput(): Promise<void> {
+    const token = await window.talktome.speechToken(this.callId, "realtime_scribe");
+    if (this.stopped || !this.context) return;
+    const query = new URLSearchParams({
+      model_id: "scribe_v2_realtime",
+      audio_format: `pcm_${this.context.sampleRate}`,
+      commit_strategy: "vad",
+      vad_silence_threshold_secs: "0.8",
+      token,
+    });
+    const socket = new WebSocket(`wss://api.elevenlabs.io/v1/speech-to-text/realtime?${query}`);
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("Speech input took too long to connect.")), 10000);
+      socket.addEventListener("open", () => { clearTimeout(timer); resolve(); }, { once: true });
+      socket.addEventListener("error", () => { clearTimeout(timer); reject(new Error("Speech input could not connect.")); }, { once: true });
+      socket.addEventListener("close", () => { clearTimeout(timer); reject(new Error("Speech input closed.")); }, { once: true });
+    });
+    this.input = socket;
+    this.reconnects = 0;
+    socket.addEventListener("message", (event) => this.receive(String(event.data)));
+    socket.addEventListener("close", () => {
+      if (this.input === socket) this.reconnect();
+    });
+  }
+
+  // reconnect opens speech input again after it drops, up to three times.
+  private reconnect(): void {
+    this.input = null;
+    if (this.stopped || !this.listening) return;
+    this.reconnects += 1;
+    if (this.reconnects > 3) {
+      this.fail("Speech input closed.");
+      return;
+    }
+    setTimeout(() => {
+      this.openInput().catch(() => this.reconnect());
+    }, 500 * this.reconnects);
   }
 
   private receive(raw: string): void {
@@ -184,6 +210,7 @@ class VoiceCall {
   // finish ends the call's listening, lets the replies that wait play out,
   // and then stops. A goodbye is the last thing the user hears.
   async finish(): Promise<void> {
+    this.listening = false;
     this.muted = true;
     this.input?.close();
     this.stream?.getTracks().forEach((track) => track.stop());
