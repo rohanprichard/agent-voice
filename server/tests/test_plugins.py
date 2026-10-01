@@ -92,3 +92,11 @@ def test_an_install_removes_the_earlier_apps_skill(tmp_path):
     assert not (tmp_path / ".codex" / "skills" / "talktome").exists()
     assert not (tmp_path / ".hermes" / "skills" / "talktome").exists()
     assert (tmp_path / ".codex" / "skills" / "other" / "SKILL.md").exists()
+
+
+def test_a_plugin_is_not_pointed_into_uvs_cache(tmp_path):
+    inst, _ = installer(tmp_path, "claude")
+    inst.exe = "/Users/me/.cache/uv/archive-v0/abc/bin/talktome-server"
+    with pytest.raises(PluginError, match="uv tool install talktome-server"):
+        inst.install("claude")
+    assert not (tmp_path / ".claude" / "skills" / "talktome").exists()

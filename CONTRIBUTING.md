@@ -47,7 +47,19 @@ The version is in three files: `package.json`, `server/pyproject.toml`, and `ser
 The release workflow stops if the tag does not match the three files.
 It builds the disk image and the zip, then attaches them to a GitHub release.
 The job summary shows the `sha256` value for the Homebrew cask.
-If the repository variable `PUBLISH_PYPI` is `true`, the workflow also publishes `talktome-server` to PyPI.
+
+### talktome-server on PyPI
+
+| Command | What it does |
+| --- | --- |
+| `npm run version:set -- 0.2.1` | Set the version in the three files and update the lock files |
+| `npm run server:check` | Test, build, check, and install the source archive in a clean folder |
+| `npm run server:publish:test` | The check, then an upload to TestPyPI. Needs a TestPyPI token in `UV_PUBLISH_TOKEN`. |
+| `npm run server:publish` | The check, then an upload to PyPI. Needs a PyPI token in `UV_PUBLISH_TOKEN`. |
+
+The workflow **Publish talktome-server** does the same check and uploads with trusted publishing, with no token. Run it from the Actions tab and pick TestPyPI or PyPI. A `v*` tag also runs it, and uploads to PyPI when the repository variable `PUBLISH_PYPI` is `true`.
+
+One-time setup on PyPI and TestPyPI: add a pending trusted publisher for the project `talktome-server`, with the owner `rohanprichard`, the repository `talktome`, the workflow `publish-server.yml`, and the environment `pypi` (on TestPyPI, `testpypi`). On GitHub, make the environments `pypi` and `testpypi`.
 
 ## Style
 

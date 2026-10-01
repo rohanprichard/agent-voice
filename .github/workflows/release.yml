@@ -58,26 +58,3 @@ jobs:
             dist/app/*.dmg
             dist/app/*.zip
             dist/app/latest-mac.yml
-
-  # PyPI trusts this workflow through trusted publishing, so no token is
-  # stored. It is off until the owner sets up the trusted publisher on PyPI and
-  # sets the repository variable PUBLISH_PYPI to true.
-  server:
-    if: vars.PUBLISH_PYPI == 'true'
-    needs: app
-    runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - run: uv sync --frozen
-        working-directory: server
-      - run: uv run pytest -q
-        working-directory: server
-      - run: uv build
-        working-directory: server
-      - uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: server/dist

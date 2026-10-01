@@ -95,8 +95,11 @@ def run_host(name: str, *args: str) -> str:
 
 
 def this_program() -> str:
-    found = shutil.which("talktome-server") or find("talktome-server") or sys.argv[0]
-    return os.path.realpath(found)
+    """The talktome-server that runs now, so the plugins match it."""
+    running = sys.argv[0]
+    if os.path.basename(running) == "talktome-server" and os.path.isfile(running):
+        return os.path.realpath(running)
+    return os.path.realpath(shutil.which("talktome-server") or find("talktome-server") or running)
 
 
 class Installer:
@@ -134,6 +137,13 @@ class Installer:
         return found
 
     def install(self, host: str) -> dict:
+        # The plugins run this program by its path. uvx runs it from uv's cache,
+        # which uv can clear, and the hooks would then point at nothing.
+        if "/uv/archive-" in self.exe or "/uv/environments-" in self.exe:
+            raise PluginError(
+                "talktome-server runs from uv's cache here, which uv can delete. "
+                "Install it first with: uv tool install talktome-server"
+            )
         home = self.host_home(host)
         if not home.is_dir():
             raise PluginError(f"{host} is not set up for this user: {home} does not exist")

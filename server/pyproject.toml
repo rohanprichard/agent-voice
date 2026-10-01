@@ -4,9 +4,29 @@ version = "0.2.0"
 description = "The agent side of talktome voice calls: run it where your coding agents run."
 readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Rohan Richard" }]
 requires-python = ">=3.11"
 dependencies = ["mcp>=1.9,<2"]
+keywords = ["voice", "agents", "claude-code", "codex", "hermes", "openclaw", "mcp"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development",
+]
+
+[project.urls]
+Homepage = "https://github.com/rohanprichard/talktome"
+Source = "https://github.com/rohanprichard/talktome/tree/main/server"
+Issues = "https://github.com/rohanprichard/talktome/issues"
+Changelog = "https://github.com/rohanprichard/talktome/blob/main/CHANGELOG.md"
 
 [project.scripts]
 talktome-server = "talktome_server.cli:main"

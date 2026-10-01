@@ -1,0 +1,71 @@
+name: Publish talktome-server
+
+# Run it by hand from the Actions tab to upload to TestPyPI or PyPI, or push
+# a v* tag. PyPI trusts this workflow through trusted publishing, so no token
+# is stored. A tag publishes only when the repository variable PUBLISH_PYPI
+# is true, so tags do nothing here until PyPI is set up.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Where to upload
+        type: choice
+        options: [testpypi, pypi]
+        default: testpypi
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check that a tag matches the version
+        if: github.ref_type == 'tag'
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' server/pyproject.toml)
+          [ "${GITHUB_REF_NAME#v}" = "$version" ] || { echo "Tag $GITHUB_REF_NAME, package $version"; exit 1; }
+      # Tests, build, twine check, and an install of the source archive.
+      - run: sh scripts/release-server.sh check
+      - uses: actions/upload-artifact@v4
+        with:
+          name: talktome-server
+          path: server/dist/
+
+  testpypi:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: talktome-server
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  pypi:
+    needs: build
+    if: (github.event_name == 'workflow_dispatch' && inputs.target == 'pypi') || (github.ref_type == 'tag' && vars.PUBLISH_PYPI == 'true')
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: talktome-server
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
