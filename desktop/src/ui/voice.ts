@@ -107,7 +107,7 @@ class VoiceCall {
   // explain turns an ElevenLabs error into words the user can act on.
   static explain(code: string, message = ""): string {
     if (code === "quota_exceeded" || /quota|credits/i.test(message)) {
-      return "Your ElevenLabs account is out of credits. Add credits at elevenlabs.io, then call again.";
+      return "Your ElevenLabs account is out of credits. All keys on an account share its credits, so a new key does not help. Add credits at elevenlabs.io, then call again.";
     }
     if (code === "auth_error" || /unauthori[sz]ed|invalid api key/i.test(message)) return "ElevenLabs refused the key. Check it in talktome.";
     if (code === "rate_limited" || /rate limit/i.test(message)) return "ElevenLabs is busy right now. Try again in a moment.";
