@@ -77,3 +77,18 @@ def test_a_host_that_is_not_set_up_is_reported(tmp_path):
     inst, _ = installer(tmp_path)
     with pytest.raises(PluginError, match="not set up"):
         inst.install("openclaw")
+
+
+def test_an_install_removes_the_earlier_apps_skill(tmp_path):
+    inst, _ = installer(tmp_path, "codex", "hermes")
+    old = "---\nname: talktome\ndescription: Start a live voice call through the local TalkToMe app.\n---\n"
+    for host in ("codex", "hermes"):
+        (tmp_path / f".{host}" / "skills" / "talktome").mkdir(parents=True)
+        (tmp_path / f".{host}" / "skills" / "talktome" / "SKILL.md").write_text(old)
+    (tmp_path / ".codex" / "skills" / "other").mkdir()
+    (tmp_path / ".codex" / "skills" / "other" / "SKILL.md").write_text("an unrelated skill")
+    inst.install("codex")
+    inst.install("hermes")
+    assert not (tmp_path / ".codex" / "skills" / "talktome").exists()
+    assert not (tmp_path / ".hermes" / "skills" / "talktome").exists()
+    assert (tmp_path / ".codex" / "skills" / "other" / "SKILL.md").exists()

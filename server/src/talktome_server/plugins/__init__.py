@@ -60,6 +60,12 @@ HERMES_VOICE_DISPLAY = [
 USER_BIN_DIRS = ["~/.local/bin", "~/.npm-global/bin", "~/.claude/local", "/opt/homebrew/bin", "/usr/local/bin"]
 
 
+# The earlier talktome app put a skill that runs the `talktome` command in
+# each host's skills folder. An agent that finds it tries that command, which
+# no longer exists, so installing a plugin removes it.
+OLD_SKILL_MARK = "through the local TalkToMe app"
+
+
 class PluginError(Exception):
     pass
 
@@ -132,6 +138,7 @@ class Installer:
         if not home.is_dir():
             raise PluginError(f"{host} is not set up for this user: {home} does not exist")
         paths.data_dir(self.env).mkdir(parents=True, exist_ok=True, mode=0o700)
+        self._remove_old_skill(host)
         target = self.target(host)
         if host == "openclaw":
             return self._install_openclaw(target)
@@ -149,6 +156,15 @@ class Installer:
             "config": changed,
             "next": "Restart the Hermes gateway: hermes gateway restart",
         }
+
+    def _remove_old_skill(self, host: str) -> None:
+        skill = self.host_home(host) / "skills" / "talktome"
+        try:
+            old = OLD_SKILL_MARK in (skill / "SKILL.md").read_text(errors="replace")
+        except OSError:
+            return
+        if old and not (skill / ".claude-plugin").exists():
+            shutil.rmtree(skill, ignore_errors=True)
 
     def _hermes_display(self) -> list[str]:
         changed = []
