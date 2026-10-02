@@ -5,6 +5,10 @@ This file lists the changes that users see. The format follows
 
 ## Unreleased
 
+### Changed
+
+- The app installs `talktome-server` from PyPI, at the same version as the app. The disk image no longer contains the server.
+
 ## 0.2.0 - 2026-10-01
 
 ### Changed

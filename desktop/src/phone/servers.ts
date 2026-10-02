@@ -110,7 +110,7 @@ export async function installUv(place: string): Promise<string> {
   return ran.code === 0 ? "" : explain(ran.err.trim(), ran.code);
 }
 
-// serverSource is what uv installs: the package name, a git URL, or a wheel
+// serverSource is what uv installs: a PyPI requirement, a git URL, or a wheel
 // file on this computer, which is copied to a server first.
 export function serverSource(): string {
   return process.env.TALKTOME_SERVER_SOURCE || "talktome-server";
