@@ -1,5 +1,12 @@
 # talktome
 
+[![PyPI version](https://img.shields.io/pypi/v/talktome-server?label=PyPI%20server)](https://pypi.org/project/talktome-server/)
+[![Server Python versions](https://img.shields.io/pypi/pyversions/talktome-server?label=server%20Python)](https://pypi.org/project/talktome-server/)
+[![Tests](https://github.com/rohanprichard/talktome/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/rohanprichard/talktome/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/rohanprichard/talktome)](https://github.com/rohanprichard/talktome/releases/latest)
+[![MIT license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/rohanprichard/talktome/blob/main/LICENSE)
+[![macOS 14 or later, Apple silicon](https://img.shields.io/badge/macOS-14%2B%20%7C%20Apple%20silicon-lightgrey)](#install)
+
 Voice calls with your coding agents, from the macOS menu bar.
 
 Your agents call you when they need a decision or finish a task. You call them to ask how the work is going, or to join a session while it works. The agents run on your Mac or on your own servers, and talktome reaches servers over SSH.
