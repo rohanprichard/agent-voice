@@ -32,7 +32,7 @@ You do steps 2 and 3 once. Or run `xattr -dr com.apple.quarantine /Applications/
 
 You also need:
 
-- An [ElevenLabs](https://elevenlabs.io) API key, on an account with credits. Calls are voice only.
+- An [ElevenLabs](https://elevenlabs.io) API key, on an account with credits. Calls are voice only. The app includes local speech detection models.
 - At least one agent: Claude Code, Codex, Hermes Agent, or OpenClaw.
 
 ## Set up
@@ -57,6 +57,19 @@ After an install, each agent needs one more step:
 Open the window from the menu bar. Under **Machines**, type a host from your SSH config, or `user@host`, and select **Check**. talktome does the same setup on the server over SSH. Then select **Connect**.
 
 talktome uses SSH keys only. If SSH asks for a password, run `ssh-copy-id user@host` first.
+
+## Speech and pauses
+
+The app uses Silero to detect speech and Smart Turn to detect when a thought ends.
+A pause can remain part of the same thought.
+After five seconds of silence, the app requests transcript completion even if the model remains uncertain.
+Speak during a reply to pause its audio. The app resumes if detection produces no words or a brief “mm-hmm” or “uh-huh”.
+A spoken request stops the reply. The agent receives the request when the thought ends.
+Stopping speech does not cancel the agent's current tool or terminal task.
+The **Stop reply** button remains available.
+
+The installer includes both detection models. The first call installs their Python dependencies through `uv`.
+The app examines the model checksums before use. Calls still use ElevenLabs for transcription and speech output.
 
 ## Privacy
 

@@ -8,6 +8,7 @@
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, Notification, powerMonitor, safeStorage, screen, Tray } from "electron";
 import path from "node:path";
 
+import { SpeechDetector } from "./phone/detector";
 import { Hub } from "./phone/hub";
 import { Phone, type Snapshot } from "./phone/phone";
 import * as servers from "./phone/servers";
@@ -25,6 +26,8 @@ if (process.env.TALKTOME_DATA_DIR) app.setPath("userData", process.env.TALKTOME_
 if (app.isPackaged && !process.env.TALKTOME_SERVER_SOURCE) {
   process.env.TALKTOME_SERVER_SOURCE = `talktome-server==${app.getVersion()}`;
 }
+
+const detectors = new Map<string, SpeechDetector>();
 
 let hub: Hub | null = null;
 let phone: Phone | null = null;
@@ -71,6 +74,12 @@ function snapshot(): AppState {
 
 function broadcast(): void {
   const state = snapshot();
+  for (const [id, detector] of detectors) {
+    if (!state.calls.some((call) => call.id === id && call.state === "live")) {
+      detector.close();
+      detectors.delete(id);
+    }
+  }
   for (const window of [pill, agents]) {
     if (window && !window.isDestroyed()) window.webContents.send("state", state);
   }
@@ -203,6 +212,26 @@ handle("state", () => snapshot());
 handle("answer", (callId: string) => phone?.answer(callId));
 handle("decline", (callId: string) => phone?.decline(callId));
 handle("say", (callId: string, text: string) => phone?.say(callId, text));
+handle("detector-start", async (callId: string) => {
+  if (!phone?.snapshot().calls.some((call) => call.id === callId && call.state === "live")) throw new Error("The call is not live.");
+  let detector = detectors.get(callId);
+  if (!detector) {
+    const script = app.isPackaged
+      ? path.join(process.resourcesPath, "voice", "detector.py")
+      : path.join(__dirname, "..", "voice", "detector.py");
+    detector = new SpeechDetector(script, path.join(app.getPath("userData"), "speech-models"));
+    detectors.set(callId, detector);
+  }
+  try { await detector.ready; } catch (error) { detectors.delete(callId); throw error; }
+});
+handle("detector-audio", (callId: string, kind: "vad" | "turn" | "reset", audio: string) => {
+  if (!["vad", "turn", "reset"].includes(kind) || typeof audio !== "string" || audio.length > 350_000) throw new Error("The speech detection request is not valid.");
+  const detector = detectors.get(callId);
+  if (!detector) throw new Error("Speech detection is not ready.");
+  return detector.request(kind, audio);
+});
+handle("detector-stop", (callId: string) => { detectors.get(callId)?.close(); detectors.delete(callId); });
+app.on("before-quit", () => { for (const detector of detectors.values()) detector.close(); });
 handle("speech-token", (callId: string, kind: "realtime_scribe" | "tts_websocket") => {
   if (!phone?.snapshot().calls.some((call) => call.id === callId && call.state === "live")) {
     throw new Error("The call is not live.");

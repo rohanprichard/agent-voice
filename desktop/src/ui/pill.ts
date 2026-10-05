@@ -210,7 +210,9 @@
     let kind = "";
     if (call.state === "calling") [text, kind] = ["Calling…", "waiting"];
     else if (call.state === "ended") text = call.ended ?? "Call ended";
+    else if (voice && !voice.ready) [text, kind] = ["Preparing speech…", "waiting"];
     else if (voice?.playing()) [text, kind] = ["Agent speaking", "agent"];
+    else if (voice?.hasUserTurn()) text = voice.partial ? "Hearing you" : "Still listening";
     else if (call.waiting) [text, kind] = ["Thinking…", "waiting"];
     else if (speechFailed) [text, kind] = ["Speech stopped", "agent"];
     else if (voice?.isMuted()) [text, kind] = ["Microphone off", "agent"];

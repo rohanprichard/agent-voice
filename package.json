@@ -1,6 +1,6 @@
 {
   "name": "talktome",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Voice calls with your coding agents, on this Mac and on your servers over SSH. A macOS menu-bar app.",
   "license": "MIT",
   "author": "Rohan Richard",
@@ -23,11 +23,12 @@
     "build:ts": "node scripts/build-ts.mjs",
     "test": "node scripts/build-ts.mjs && node --test \"desktop/build/**/*.test.js\"",
     "test:server": "cd server && uv run pytest -q && uvx ruff check src tests",
-    "build:app": "node scripts/make-app-icon.mjs && node scripts/build-ts.mjs && electron-builder --mac --publish never",
+    "build:app": "node scripts/make-app-icon.mjs && node scripts/build-ts.mjs && npm run models:download && electron-builder --mac --publish never",
     "version:set": "sh scripts/set-version.sh",
     "server:check": "sh scripts/release-server.sh check",
     "server:publish:test": "sh scripts/release-server.sh testpypi",
-    "server:publish": "sh scripts/release-server.sh pypi"
+    "server:publish": "sh scripts/release-server.sh pypi",
+    "models:download": "uv run --locked --script desktop/voice/detector.py --download-models desktop/voice/models"
   },
   "devDependencies": {
     "@types/node": "^22.20.4",
@@ -67,7 +68,19 @@
         "LSUIElement": true,
         "NSMicrophoneUsageDescription": "talktome listens to you during a call with your agent."
       }
-    }
+    },
+    "extraResources": [
+      {
+        "from": "desktop/voice",
+        "to": "voice",
+        "filter": [
+          "detector.py",
+          "detector.py.lock",
+          "licenses/**",
+          "models/*.onnx"
+        ]
+      }
+    ]
   },
   "allowScripts": {
     "electron@44.4.3": true

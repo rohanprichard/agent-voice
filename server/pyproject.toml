@@ -1,6 +1,6 @@
 [project]
 name = "talktome-server"
-version = "0.2.0"
+version = "0.2.1"
 description = "The agent side of talktome voice calls: run it where your coding agents run."
 readme = "README.md"
 license = "MIT"

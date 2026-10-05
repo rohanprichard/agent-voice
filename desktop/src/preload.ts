@@ -3,6 +3,10 @@
 
 import { contextBridge, ipcRenderer } from "electron";
 
+function explainIPC(error: Error): never {
+  throw new Error(error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ""));
+}
+
 contextBridge.exposeInMainWorld("talktome", {
   state: () => ipcRenderer.invoke("state"),
   onState: (listener: (state: unknown) => void) => {
@@ -11,6 +15,9 @@ contextBridge.exposeInMainWorld("talktome", {
   answer: (callId: string) => ipcRenderer.invoke("answer", callId),
   decline: (callId: string) => ipcRenderer.invoke("decline", callId),
   say: (callId: string, text: string) => ipcRenderer.invoke("say", callId, text),
+  detectorStart: (callId: string) => ipcRenderer.invoke("detector-start", callId).catch(explainIPC),
+  detectorAudio: (callId: string, kind: string, audio: string) => ipcRenderer.invoke("detector-audio", callId, kind, audio).catch(explainIPC),
+  detectorStop: (callId: string) => ipcRenderer.invoke("detector-stop", callId),
   speechToken: (callId: string, kind: string) =>
     ipcRenderer.invoke("speech-token", callId, kind).catch((error: Error) => {
       // Electron wraps the main process's error; the window shows only its words.
