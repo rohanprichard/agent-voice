@@ -11,6 +11,8 @@ ElevenLabs supplies transcription and speech output. It does not determine when 
 The app keeps transcript segments until it accepts the complete thought.
 If speech resumes during detection or transcript completion, the app retains the segments in the same turn.
 After five seconds of silence, the app requests transcript completion even if the model remains uncertain.
+Long speech uses ordered transcript segments.
+After 20 seconds of streamed audio, recognized speech permits a segment completion request.
 A delayed transcript must wait for all earlier microphone frames to reach VAD before delivery.
 
 During playback, local VAD continues to receive microphone audio with browser echo cancellation.

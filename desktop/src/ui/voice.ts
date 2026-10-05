@@ -23,6 +23,8 @@ class VoiceCall {
   private analyzing = false;
   private analyzedRevision: number | null = null;
   private commitRevision: number | null = null;
+  private segmentCommit = false;
+  private segmentMs = 0;
   private deliveryRevision: number | null = null;
   private completionRevision: number | null = null;
   private inputGeneration = 0;
@@ -91,6 +93,8 @@ class VoiceCall {
       audio_base_64: VoiceCall.pcmBase64(recognized),
       sample_rate: this.context?.sampleRate,
     }));
+    this.segmentMs += heard.length / 16;
+    if (this.segmentMs >= 20000) this.commitSegment();
     if (this.muted) return;
     this.turnAudio.push(heard);
     this.audioSamples += heard.length;
@@ -171,7 +175,7 @@ class VoiceCall {
       }));
     }
     // A noise event without words must not discard the agent's reply.
-    if (this.candidate && !this.interrupted && this.turn.silenceMs >= 2000 && !this.partial && !this.segments.length) {
+    if (this.candidate && !this.interrupted && this.turn.silenceMs >= 2000 && !this.partial && !this.segments.length && !this.segmentCommit) {
       this.resumeReply();
       this.resetTurn();
       return;
@@ -193,10 +197,21 @@ class VoiceCall {
   }
 
   private commitTurn(): void {
-    if (this.commitRevision !== null || this.deliveryRevision !== null || !this.turn.active || this.input?.readyState !== WebSocket.OPEN) return;
+    if (!this.turn.active || this.input?.readyState !== WebSocket.OPEN) return;
     this.completionRevision = this.turn.revision;
-    if (!this.partial && !this.segments.length) return;
+    if (this.segmentCommit || this.commitRevision !== null || this.deliveryRevision !== null || (!this.partial && !this.segments.length)) return;
     this.commitRevision = this.turn.revision;
+    this.segmentMs = 0;
+    this.input.send(JSON.stringify({ message_type: "input_audio_chunk", audio_base_64: "", sample_rate: 16000, commit: true }));
+    this.commitTimer = setTimeout(() => this.fail("The transcript took too long to complete. Start another call."), 8000);
+  }
+
+  private commitSegment(): void {
+    if (!this.turn.active || !this.partial) return;
+    if (this.segmentCommit || this.commitRevision !== null || this.deliveryRevision !== null || this.input?.readyState !== WebSocket.OPEN) return;
+    // Complete long transcription segments before the provider's automatic segment limit.
+    this.segmentCommit = true;
+    this.segmentMs = 0;
     this.input.send(JSON.stringify({ message_type: "input_audio_chunk", audio_base_64: "", sample_rate: 16000, commit: true }));
     this.commitTimer = setTimeout(() => this.fail("The transcript took too long to complete. Start another call."), 8000);
   }
@@ -209,6 +224,8 @@ class VoiceCall {
     this.segments = [];
     this.partial = "";
     this.commitRevision = null;
+    this.segmentCommit = false;
+    this.segmentMs = 0;
     this.deliveryRevision = null;
     this.completionRevision = null;
     this.analyzedRevision = null;
@@ -239,6 +256,13 @@ class VoiceCall {
       const text = event.text?.trim() ?? "";
       if (this.turn.active && text) this.segments.push(text);
       this.partial = "";
+      if (this.segmentCommit) {
+        this.segmentCommit = false;
+        if (this.commitTimer) clearTimeout(this.commitTimer);
+        this.commitTimer = null;
+        if (this.completionRevision === this.turn.revision && this.turn.silenceMs >= 320) this.commitTurn();
+        return;
+      }
       if (this.commitRevision === null) return;
       const revision = this.commitRevision;
       this.commitRevision = null;

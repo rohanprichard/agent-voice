@@ -286,3 +286,31 @@ test("a VAD result from before mute cannot start a new user turn", async () => {
   assert.equal(h.subject.hasUserTurn(), false);
   h.subject.stop();
 });
+
+
+test("a long speech segment must finish before a final turn commit can deliver", () => {
+  const h = harness();
+  h.feed(0.9, 10);
+  h.receive("partial_transcript", "First clause.");
+  h.subject.commitSegment();
+  h.feed(0.9, 10);
+  h.feed(0, 12);
+  h.subject.commitTurn();
+  assert.equal(h.commits.length, 1);
+  h.receive("committed_transcript", "First clause.");
+  assert.equal(h.commits.length, 2);
+  assert.equal(h.sent.length, 0);
+  h.receive("committed_transcript", "Second clause.");
+  assert.deepEqual(h.sent, ["First clause. Second clause."]);
+  h.subject.stop();
+});
+
+
+test("idle silence does not request an empty transcript segment", () => {
+  const h = harness();
+  h.subject.segmentMs = 25000;
+  h.subject.commitSegment();
+  assert.equal(h.commits.length, 0);
+  assert.equal(h.subject.segmentCommit, false);
+  h.subject.stop();
+});
