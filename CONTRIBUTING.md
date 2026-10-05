@@ -45,7 +45,8 @@ The version is in three files: `package.json`, `server/pyproject.toml`, and `ser
 4. Commit the change, then push a tag such as `v0.2.0`.
 
 The release workflow stops if the tag does not match the three files.
-It builds the disk image, then attaches it to a GitHub release.
+The build downloads both speech models and examines their checksums.
+It includes the models in the disk image and attaches the image to a GitHub release.
 The job summary shows the `sha256` value for the Homebrew cask.
 
 ### talktome-server on PyPI

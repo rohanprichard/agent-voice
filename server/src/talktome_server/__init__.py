@@ -6,4 +6,4 @@ app and the server talk in JSON lines over stdin and stdout. Agents, hooks,
 and host plugins reach the server through a local socket.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"

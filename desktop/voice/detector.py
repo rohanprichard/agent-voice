@@ -112,7 +112,23 @@ class Detector:
 
 
 def main():
-    detector = Detector(Path(sys.argv[1]))
+    if sys.argv[1] == "--download-models":
+        folder = Path(sys.argv[2])
+        for name in MODELS:
+            model_file(folder, name)
+        return
+    bundled = Path(__file__).parent / "models"
+    if bundled.is_dir():
+        for name, (_, expected) in MODELS.items():
+            target = bundled / name
+            if not target.is_file():
+                raise ValueError("A bundled speech model is missing.")
+            if hashlib.sha256(target.read_bytes()).hexdigest() != expected:
+                raise ValueError("The bundled speech model checksum does not match.")
+        folder = bundled
+    else:
+        folder = Path(sys.argv[1])
+    detector = Detector(folder)
     print(json.dumps({"ready": True}), flush=True)
     for line in sys.stdin:
         request = json.loads(line)

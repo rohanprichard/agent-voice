@@ -32,7 +32,7 @@ You do steps 2 and 3 once. Or run `xattr -dr com.apple.quarantine /Applications/
 
 You also need:
 
-- An [ElevenLabs](https://elevenlabs.io) API key, on an account with credits. Calls are voice only. The first call downloads local speech detection models.
+- An [ElevenLabs](https://elevenlabs.io) API key, on an account with credits. Calls are voice only. The app includes local speech detection models.
 - At least one agent: Claude Code, Codex, Hermes Agent, or OpenClaw.
 
 ## Set up
@@ -68,8 +68,8 @@ A spoken request stops the reply. The agent receives the request when the though
 Stopping speech does not cancel the agent's current tool or terminal task.
 The **Stop reply** button remains available.
 
-The first call downloads the detection models and their Python dependencies through `uv`.
-The app keeps the models on the Mac for later calls. Calls still use ElevenLabs for transcription and speech output.
+The installer includes both detection models. The first call installs their Python dependencies through `uv`.
+The app examines the model checksums before use. Calls still use ElevenLabs for transcription and speech output.
 
 ## Privacy
 

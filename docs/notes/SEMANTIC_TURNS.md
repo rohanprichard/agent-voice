@@ -52,7 +52,8 @@ The five-second limit controls uncertain endings. It does not include network tr
 
 A local Python process runs the detection models through ONNX Runtime.
 The app starts it through `uv`, which the existing setup already requires.
-The first call downloads Python dependencies and model files.
+The build downloads both models and includes them in the installer.
+The first call installs Python dependencies through `uv`.
 Later calls use the cached files.
 Python dependencies use [a script lock file](../../desktop/voice/detector.py.lock).
 Model URLs identify fixed source revisions. SHA-256 checksums identify the expected model files.
@@ -93,7 +94,7 @@ These times measure model inference only. They do not measure the delay before a
 Eight samples do not establish general accuracy.
 
 The disk image build passed.
-The packaged helper also passed a first model download with checksum checks, complete and incomplete turn requests, and a VAD request.
+The packaged helper passed model checksum tests, complete and incomplete turn requests, and a VAD request.
 
 ## Remaining live checks
 

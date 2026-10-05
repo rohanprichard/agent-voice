@@ -39,8 +39,8 @@ This section lists what talktome exposes, so that you can decide if it fits your
 ### Local speech detection
 
 - The app starts a local Python process through `uv` for Silero and Smart Turn.
-- The first call downloads pinned models from GitHub and Hugging Face. The app examines their SHA-256 checksums.
-- Python dependencies use a locked script environment. The app keeps model files in its local data folder.
+- The build downloads pinned models from GitHub and Hugging Face. The installer includes them. The app examines their SHA-256 checksums.
+- Python dependencies use a locked script environment. The app keeps the models in its installed resources.
 - Detection audio stays in process memory. The detector does not send or save it.
 - The app still sends speech to ElevenLabs for transcription and speech output.
 
