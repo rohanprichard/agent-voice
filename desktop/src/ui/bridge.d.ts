@@ -22,6 +22,9 @@ interface Window {
     answer(callId: string): Promise<void>;
     decline(callId: string): Promise<void>;
     say(callId: string, text: string): Promise<void>;
+    detectorStart(callId: string): Promise<void>;
+    detectorAudio(callId: string, kind: "vad" | "turn" | "reset", audio: string): Promise<import("../phone/detector").Detection>;
+    detectorStop(callId: string): Promise<void>;
     speechToken(callId: string, kind: "realtime_scribe" | "tts_websocket"): Promise<string>;
     hangUp(callId: string): Promise<void>;
     callAgent(agentId: string, targetId: string, mode: "join" | "continue" | "new"): Promise<string>;

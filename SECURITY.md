@@ -36,6 +36,14 @@ This section lists what talktome exposes, so that you can decide if it fits your
 - In a call into a project, talktome runs `claude -p` or `codex exec` in that folder, with the agent's own permissions. Claude asks you in the call before a tool that needs permission runs.
 - The connected agent receives what you say. talktome does not add a sandbox.
 
+### Local speech detection
+
+- The app starts a local Python process through `uv` for Silero and Smart Turn.
+- The first call downloads pinned models from GitHub and Hugging Face. The app examines their SHA-256 checksums.
+- Python dependencies use a locked script environment. The app keeps model files in its local data folder.
+- Detection audio stays in process memory. The detector does not send or save it.
+- The app still sends speech to ElevenLabs for transcription and speech output.
+
 ### Speech data
 
 - Speech uses your own ElevenLabs account. Microphone audio goes from the Mac to ElevenLabs, and reply text goes to ElevenLabs to be spoken.

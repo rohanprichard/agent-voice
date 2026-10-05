@@ -13,6 +13,12 @@ talktome-server
 talktome-server installs from PyPI with its dependencies, which include the
 Model Context Protocol Python SDK (MIT). Each keeps its own license.
 
+Local speech detection
+
+Silero voice activity detection (VAD) uses the MIT license. Smart Turn uses the BSD 2-Clause license.
+The app includes their license texts in its voice resources.
+The detection process uses NumPy, ONNX Runtime, and Transformers. Each keeps its own license.
+
 Services
 
 Speech uses ElevenLabs with the user's own API key. The user's ElevenLabs

@@ -22,6 +22,8 @@ jobs:
       - run: uv sync --frozen
         working-directory: server
       - run: npm test
+      - run: uvx ruff check desktop/voice/detector.py
+      - run: uvx ruff format --check desktop/voice/detector.py
 
   server:
     strategy:

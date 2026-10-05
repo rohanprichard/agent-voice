@@ -5,7 +5,16 @@ This file lists the changes that users see. The format follows
 
 ## Unreleased
 
+### Added
+
+- Local Silero speech detection and Smart Turn detection for pauses within a thought.
+- Voice interruption with reply recovery after a false interruption or brief acknowledgment.
+
 ### Changed
+
+- Transcript segments stay in one user turn until the thought ends, with a five-second silence limit.
+- The first call downloads speech detection models and Python dependencies. Later calls use the cached files.
+
 
 - The app installs `talktome-server` from PyPI, at the same version as the app. The disk image no longer contains the server.
 

@@ -67,7 +67,18 @@
         "LSUIElement": true,
         "NSMicrophoneUsageDescription": "talktome listens to you during a call with your agent."
       }
-    }
+    },
+    "extraResources": [
+      {
+        "from": "desktop/voice",
+        "to": "voice",
+        "filter": [
+          "detector.py",
+          "detector.py.lock",
+          "licenses/**"
+        ]
+      }
+    ]
   },
   "allowScripts": {
     "electron@44.4.3": true
